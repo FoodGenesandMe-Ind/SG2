@@ -223,7 +223,7 @@ Rules:
 
 ### 4.5 Status values, colors, and icons
 
-- **Status values are rows** in a company-level table: code, display name, color, icon. Clients rename them, recolor them, and add new ones freely.
+- **Status values are rows** in a company-level table: code, display name, short name, color, icon. Clients rename them, recolor them, and add new ones freely.
 - **Each status field has a valid-values list per layer.** "Nemo" uses Not Ready, Ready to Start, In Story, In Layout, In Animation, In Comp/Light, Final. "Pirates" uses Ready to Start, In Progress, Final Render Complete. Both use the same system Status field on the Shots table.
 - **Colors and icons are client data,** not design tokens. The design system supplies a default palette and guarantees that any client-chosen color stays legible (automatic text contrast on colored backgrounds).
 - **Meaning stays configurable.** A status value can optionally be tagged with a platform meaning (for example "counts as complete", "blocks downstream", "approved"), so platform features like progress reports and render dispatch understand client-invented statuses without hard-coding names.
@@ -237,6 +237,8 @@ Examples, described the way the builder would show them:
 - **Calculated fields** reference fields on the same record and on linked records:
   - Animation due = Shot due date minus 4 weeks
   - Total budget = Labor plus Equipment plus Contingency
+  - Total Frames = (Cut out minus Cut in) plus 1, because both end frames count
+- **Required capability (decided):** the builder must support constants and nested arithmetic, not just field-to-field operations. The Total Frames "+1" is the canonical example: production math constantly needs inclusive ranges, offsets, handles (for example "plus 8 frames of handles on each end"), and fixed multipliers.
 - **Summary fields** aggregate across linked records:
   - Total bid = (sum of Sub-bid amounts) times Markup
   - Percent complete = (count of Tasks whose status means "complete") divided by (count of Tasks)
@@ -375,15 +377,22 @@ Decided: clients can archive a project to cut storage cost.
 
 Every page is a stored record: a page type, a query, and view settings.
 
-- **Table page** — data-dense grid on exactly one table. Columns, sort, grouping with group summaries, filters, inline editing, conditional formatting.
-- **Card view** — any table page can flip to cards. The same query renders as collapsible cards. Settings choose which fields show in the collapsed title and which show when expanded. Flipping is a view setting on the same page, not a separate page.
+- **Table page** — data-dense grid on exactly one table. Columns, sort, grouping, filters, inline editing, conditional formatting. Each column has saved settings, changed from the column header's right-click menu, for example:
+  - **Summaries** (sum, average, min, max, count) shown in every group row and in a **Total row at the top**, directly under the column headers. Production data usually spans many pages, so totals for the whole result always appear on the first page, never only at the end. For example, Total Frames (a calculated field: Cut out minus Cut in, plus 1) summed per sequence and in total.
+  - **Status display:** long name, short name, or icon only (full name on hover). Long and short names always carry the status's own icon. Short names are a client-defined property of each status value.
+- **Three views of every table page** — Table, Cards, and Thumbnails, switched from the page header. Flipping is a view setting on the same page and query, not a separate page.
+  - **Cards:** collapsible cards; settings choose which fields show in the collapsed title and which show when expanded, and how many cards per row (1 to 10, default 4). Collapse controls sit on the left.
+  - **Thumbnails:** a wall of thumbnails with caption fields from the page's settings and a size slider next to the page search.
+  - View settings (columns, thumbnail size, status display, summaries) are saved with the page.
+  - Totals and group summaries appear in every view, at the top.
 - **Dashboard page** — a grid with a configured number of rows and columns. Each cell holds a widget from the widget library: pie chart, bar chart, histogram, heat map, number tile, table snippet, progress summary, and more over time. Each widget has its own query.
 - **Specialized pages** — tools that are more than a query: entity detail, script room, world bible, review player. They still sit in the same navigation tree and respect the same scope rules.
 
 ### 5.2 Left navigation tree
 
-- The tree follows the hierarchy: the Company level at the top, then each Project the user can access.
-- Under each level: system and custom tables, Saved Pages, and folders.
+- The tree follows the hierarchy: Company-level items sit directly at the top (there is no "Company" grouper), followed by a Projects section with each project the user can access.
+- **Docked or undocked.** Docked, the navigation is part of the layout. Undocked, it collapses to a slim rail so pages get the full width; the rail button floats the navigation over the page until the user clicks away or pins it back.
+- Under each level: system and custom tables, Saved Pages, and folders. Tables appear directly in the tree (there is no "Tables" grouper); clients can file tables into folders just like pages.
 - Every level has a **Personal** folder (the signed-in user's personal pages at that level). The Company level also has a **Multi-project pages** folder.
 - Clients can create as many Saved Pages and folders as they like.
 
@@ -663,3 +672,4 @@ Record decisions here as they are made: date, decision, reasoning, and who decid
 | 2026-10-31 | Events kept indefinitely and counted in the storage footprint; clients can download events to save money; projects can be archived to cheaper storage with all their data | Full history by default, with clear ways for clients to control cost | Nephi |
 | 2026-10-31 | No formula syntax for users: visual builders for calculated fields, summaries, and conditional formatting, stored as structured expression trees | Producers and artists should never have to learn a syntax | Nephi |
 | 2026-10-31 | Charts: start with ECharts, themed from tokens and wrapped behind our own widget components, ready to be replaced by our own charts | Every UI element must look and feel harmonized | Nephi |
+| 2026-11-01 | Calculated fields must support constants and nested arithmetic (for example Total Frames = Cut out - Cut in + 1) | Production math needs inclusive ranges, handles, and offsets, not only field-to-field operations | Nephi |

@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "@sgp/tokens/tokens.css";
 
+@import "../pitch/directions.css";
+
 @source "..";
 
 /*
@@ -14,6 +16,15 @@
   --color-surface-sunken: var(--sgp-color-surface-sunken);
   --color-line: var(--sgp-color-border);
   --color-line-strong: var(--sgp-color-border-strong);
+
+  --color-chrome: var(--sgp-color-chrome);
+  --color-chrome-fg: var(--sgp-color-chrome-text);
+  --color-chrome-muted: var(--sgp-color-chrome-muted);
+  --color-nav: var(--sgp-color-nav);
+  --color-nav-active: var(--sgp-color-nav-active);
+  --color-row-alt: var(--sgp-color-row-alt);
+  --color-row-hover: var(--sgp-color-row-hover);
+  --color-row-selected: var(--sgp-color-row-selected);
 
   --color-fg: var(--sgp-color-text);
   --color-fg-muted: var(--sgp-color-text-muted);

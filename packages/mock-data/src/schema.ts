@@ -153,6 +153,15 @@ export const tables: TableDef[] = [
       { code: 'description', label: 'Description', type: 'text', system: true },
       { code: 'frameIn', label: 'Cut in', type: 'number', system: true },
       { code: 'frameOut', label: 'Cut out', type: 'number', system: true },
+      {
+        code: 'totalFrames',
+        label: 'Total Frames',
+        type: 'calculated',
+        formula: {
+          op: 'add',
+          args: [{ op: 'subtract', args: [{ field: 'frameOut' }, { field: 'frameIn' }] }, { value: 1 }],
+        },
+      },
       { code: 'dueDate', label: 'Due', type: 'date' },
       {
         code: 'animationDue',
@@ -184,7 +193,7 @@ export const tables: TableDef[] = [
     label: 'Tasks',
     scope: 'project',
     system: true,
-    icon: 'check-square',
+    icon: 'square-check',
     fields: [
       { ...projectLink },
       { code: 'entityId', label: 'Link', type: 'entity', linkTo: ['Shot', 'Asset'], system: true },
@@ -201,7 +210,7 @@ export const tables: TableDef[] = [
     label: 'Versions',
     scope: 'project',
     system: true,
-    icon: 'play-square',
+    icon: 'square-play',
     fields: [
       { ...projectLink },
       { code: 'code', label: 'Version', type: 'text', system: true },

@@ -1,5 +1,5 @@
 import { changeDecisions, fieldConfigLayers, templates } from './company';
-import { folders, pages } from './pages';
+import { folders, pages, tablePlacements } from './pages';
 import { projects } from './project';
 import { tables } from './schema';
 import type {
@@ -206,12 +206,14 @@ export function resolvePageScope(page: Page): PageScope {
 
 export interface NavFolder {
   folder: Folder;
+  tables: EffectiveTable[];
   pages: Page[];
 }
 
 export interface NavLevel {
   scope: PageScope;
   label: string;
+  /** Tables not filed into a folder, shown directly at the level root. */
   tables: EffectiveTable[];
   folders: NavFolder[];
   /** Shared pages at the level root. */
@@ -236,11 +238,19 @@ export function buildNavTree(viewerId: string): NavTree {
       .filter((t) => t.scope === scope.level)
       .map((t) => resolveTableConfig(t.code, projectId)!)
       .filter((t) => !t.hidden);
+    const placementFor = (code: string) =>
+      tablePlacements.find((p) => p.table === code && sameScope(p.scope, scope));
     return {
       scope,
       label,
-      tables: levelTables,
-      folders: folders.filter((f) => sameScope(f.scope, scope)).map((folder) => ({ folder, pages: [] })),
+      tables: levelTables.filter((t) => !placementFor(t.code)),
+      folders: folders
+        .filter((f) => sameScope(f.scope, scope))
+        .map((folder) => ({
+          folder,
+          tables: levelTables.filter((t) => placementFor(t.code)?.folderId === folder.id),
+          pages: [],
+        })),
       pages: [],
       personal: [],
     };

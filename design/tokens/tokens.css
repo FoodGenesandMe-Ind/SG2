@@ -19,6 +19,18 @@
   --sgp-color-text-subtle: #6f7378;
   --sgp-color-text-inverse: #121314;
 
+  /* App chrome (top bar) and left navigation */
+  --sgp-color-chrome: #0d0e0f;
+  --sgp-color-chrome-text: #e8e9eb;
+  --sgp-color-chrome-muted: #a3a6ab;
+  --sgp-color-nav: #161718;
+  --sgp-color-nav-active: #1b2c42;
+
+  /* Data rows */
+  --sgp-color-row-alt: #1d1e20;
+  --sgp-color-row-hover: #25272a;
+  --sgp-color-row-selected: #1b2c42;
+
   /* Accent */
   --sgp-color-accent: #4f9dff;
   --sgp-color-accent-hover: #6aadff;

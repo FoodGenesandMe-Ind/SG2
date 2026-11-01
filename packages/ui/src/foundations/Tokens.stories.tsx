@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 const meta: Meta = {
   title: 'Foundations/Tokens',
-  tags: ['proposed'],
+  tags: ['deprecated'],
 };
 
 export default meta;

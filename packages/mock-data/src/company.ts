@@ -56,26 +56,26 @@ export const permissionSets: PermissionSet[] = [
 /** Company-wide pool of status values. Colors and icons are client data. */
 export const statusValues: StatusValue[] = [
   // Task, version, and asset workflow
-  { code: 'wtg', label: 'Waiting to start', color: '#6f7378', icon: 'circle-dashed', meaning: 'not-started' },
-  { code: 'rdy', label: 'Ready to start', color: '#a27cf2', icon: 'circle', meaning: 'not-started' },
-  { code: 'ip', label: 'In progress', color: '#4f9dff', icon: 'circle-half', meaning: 'active' },
-  { code: 'rev', label: 'Pending review', color: '#f2b544', icon: 'eye', meaning: 'review' },
-  { code: 'rtk', label: 'Retake', color: '#ef5b5b', icon: 'rotate-ccw', meaning: 'active' },
-  { code: 'apr', label: 'Approved', color: '#4cc38a', icon: 'check', meaning: 'approved' },
-  { code: 'omt', label: 'Omitted', color: '#45484d', icon: 'ban', meaning: 'omitted' },
+  { code: 'wtg', label: 'Waiting to start', shortLabel: 'WTG', color: '#6f7378', icon: 'circle-dashed', meaning: 'not-started' },
+  { code: 'rdy', label: 'Ready to start', shortLabel: 'RDY', color: '#a27cf2', icon: 'circle', meaning: 'not-started' },
+  { code: 'ip', label: 'In progress', shortLabel: 'IP', color: '#4f9dff', icon: 'contrast', meaning: 'active' },
+  { code: 'rev', label: 'Pending review', shortLabel: 'REV', color: '#f2b544', icon: 'eye', meaning: 'review' },
+  { code: 'rtk', label: 'Retake', shortLabel: 'RTK', color: '#ef5b5b', icon: 'rotate-ccw', meaning: 'active' },
+  { code: 'apr', label: 'Approved', shortLabel: 'APR', color: '#4cc38a', icon: 'check', meaning: 'approved' },
+  { code: 'omt', label: 'Omitted', shortLabel: 'OMT', color: '#45484d', icon: 'ban', meaning: 'omitted' },
   // Shot stages used by the 3D Animation template (the "Nemo" pattern)
-  { code: 'nrdy', label: 'Not Ready', color: '#6f7378', icon: 'circle-dashed', meaning: 'not-started' },
-  { code: 'story', label: 'In Story', color: '#6e7cf2', icon: 'book-open', meaning: 'active' },
-  { code: 'previs', label: 'In Previs', color: '#e66fb0', icon: 'clapperboard', meaning: 'active' },
-  { code: 'layout', label: 'In Layout', color: '#3fc1e6', icon: 'layout', meaning: 'active' },
-  { code: 'anim', label: 'In Animation', color: '#4f9dff', icon: 'person-running', meaning: 'active' },
-  { code: 'complight', label: 'In Comp/Light', color: '#f2864a', icon: 'sun', meaning: 'active' },
-  { code: 'final', label: 'Final', color: '#4cc38a', icon: 'flag', meaning: 'complete' },
+  { code: 'nrdy', label: 'Not Ready', shortLabel: 'NR', color: '#6f7378', icon: 'circle-dashed', meaning: 'not-started' },
+  { code: 'story', label: 'In Story', shortLabel: 'STY', color: '#6e7cf2', icon: 'book-open', meaning: 'active' },
+  { code: 'previs', label: 'In Previs', shortLabel: 'PVS', color: '#e66fb0', icon: 'clapperboard', meaning: 'active' },
+  { code: 'layout', label: 'In Layout', shortLabel: 'LAY', color: '#3fc1e6', icon: 'frame', meaning: 'active' },
+  { code: 'anim', label: 'In Animation', shortLabel: 'ANM', color: '#4f9dff', icon: 'person-standing', meaning: 'active' },
+  { code: 'complight', label: 'In Comp/Light', shortLabel: 'C/L', color: '#f2864a', icon: 'sun', meaning: 'active' },
+  { code: 'final', label: 'Final', shortLabel: 'FIN', color: '#4cc38a', icon: 'flag', meaning: 'complete' },
   // Shot statuses used by the Live action / VFX template (the "Pirates" pattern)
-  { code: 'frc', label: 'Final Render Complete', color: '#2fb5a8', icon: 'film', meaning: 'complete' },
+  { code: 'frc', label: 'Final Render Complete', shortLabel: 'FRC', color: '#2fb5a8', icon: 'film', meaning: 'complete' },
   // Issues
-  { code: 'open', label: 'Open', color: '#ef5b5b', icon: 'alert-circle', meaning: 'active' },
-  { code: 'closed', label: 'Closed', color: '#6f7378', icon: 'check-circle', meaning: 'complete' },
+  { code: 'open', label: 'Open', shortLabel: 'OPN', color: '#ef5b5b', icon: 'circle-alert', meaning: 'active' },
+  { code: 'closed', label: 'Closed', shortLabel: 'CLS', color: '#6f7378', icon: 'circle-check', meaning: 'complete' },
 ];
 
 /**

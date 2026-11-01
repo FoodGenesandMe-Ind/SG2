@@ -1,4 +1,4 @@
-import type { Folder, Page } from './types';
+import type { Folder, Page, TablePlacement } from './types';
 
 const LMP = 'prj01';
 const TSR = 'prj02';
@@ -12,6 +12,15 @@ export const folders: Folder[] = [
   { id: 'f-lmp-production', name: 'Production', scope: { level: 'project', projectId: LMP } },
   { id: 'f-lmp-review', name: 'Review', scope: { level: 'project', projectId: LMP } },
   { id: 'f-lmp-budget', name: 'Budget', scope: { level: 'project', projectId: LMP } },
+];
+
+/** Tables appear directly in the navigation; clients may file them into folders like pages. */
+export const tablePlacements: TablePlacement[] = [
+  { table: 'PermissionSet', scope: { level: 'company' }, folderId: 'f-studio' },
+  { table: 'Template', scope: { level: 'company' }, folderId: 'f-studio' },
+  { table: 'PipelineStep', scope: { level: 'company' }, folderId: 'f-studio' },
+  { table: 'Bid', scope: { level: 'project', projectId: LMP }, folderId: 'f-lmp-budget' },
+  { table: 'SubBid', scope: { level: 'project', projectId: LMP }, folderId: 'f-lmp-budget' },
 ];
 
 /**
@@ -81,7 +90,7 @@ export const pages: Page[] = [
     id: 'pg-character-library',
     name: 'Character library',
     type: 'table',
-    view: 'card',
+    view: 'thumb',
     ownerId: 'p02',
     shared: true,
     query: {
@@ -139,9 +148,18 @@ export const pages: Page[] = [
       table: 'Shot',
       filters: [{ field: 'projectId', op: 'is', value: LMP }],
       groupBy: 'sequenceId',
-      columns: ['code', 'status', 'description', 'frameIn', 'frameOut', 'dueDate', 'animationDue', 'assetIds'],
+      columns: ['code', 'status', 'description', 'frameIn', 'frameOut', 'totalFrames', 'dueDate', 'animationDue', 'assetIds'],
     },
-    cardSettings: { titleFields: ['code', 'status'], expandedFields: ['description', 'dueDate', 'assetIds'] },
+    columnSettings: {
+      status: { statusDisplay: 'long' },
+      totalFrames: { summary: 'sum' },
+    },
+    cardSettings: {
+      titleFields: ['code', 'status'],
+      expandedFields: ['description', 'frameIn', 'frameOut', 'totalFrames', 'dueDate', 'assetIds'],
+      columns: 4,
+    },
+    thumbSettings: { captionFields: ['code', 'status'], size: 192 },
   },
   {
     id: 'pg-lmp-assets',

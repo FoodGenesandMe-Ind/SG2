@@ -19,7 +19,7 @@
 
 5. Continuation of 4 above: Clients can create 'folders' in the Nav that help them organize all the Pages that get built up -- a folder can only accept Pages in the same heirarchy: no breaking rules and putting one Project page inside a folder of a different project!
 
-6. We embrace that clients want customizable colors and status names and icons, conditional colors (turn the bg of the shot row red if the due date is in the past), calculated columns (the animation due date is the shot due date minus 4 weeks; or the 'total budget' field = the sum of three other fields; or the 'total bid' field = (the sum of all sub-bids) \* markup)
+6. We embrace that clients want customizable colors and status names and icons, conditional colors (turn the bg of the shot row red if the due date is in the past), calculated columns, (the animation due date is the shot due date minus 4 weeks; or the 'total budget' field = the sum of three other fields; or the 'total bid' field = (the sum of all sub-bids) \* markup). We also have columns that can be configured to show summary data like 'sum', and 'avg' on numberic fields.
 
 7. We embrace that pipleines are deeply integrated with other business logic and so our API is extremely robust, and key to that is our Event table, that tracks _every single thing_ that happens in the pipeline, knowing that clients rely on that to trigger other processes.
 
@@ -32,3 +32,9 @@
 - a 'dashboard' page that is configured to have x number of rows and columns and inside each users can select from the widget library which types of widgets to configure and display (e.g. pie charts, heat maps, histograms, bar charts, etc.)
 
 10. We have all the usual field types, common in postgres, _and_ some specialized field types: query fields, calculated fields, Status fields (that have a long display: "In Progress", an abbreviated display: "IP", and an icon that can be customized) and we have the concept of a "pipeline" fields which is the stages/phases/steps/Departments that Shots or Assets (or other) go through. It is an open question what the data model is for theses pipelines/phases/steps/departments. Are they just fields in a Table that represent the workflow? Or are they tables of their own? Is it just an enum list that gets represented through query-fields? I am inclined to put a line in the sand by saying they are a specialized field type: of type 'Step', and when configured certain parameters are defined (order, how 'done' is defined) But I want an elegant way to define and configure them.
+
+11. Specialized "Notes" tables.  We have a system table called Notes, that is just what is sounds like:  an email-like note (that users can subscribe to and get them also sent to their email).  All users have an inbox with notes
+
+12. Notifications:  users have a robust notification where they can manage notification subscriptions to certain key things.  At the most basic level, a note addressed to a person always shows up in their inbox, where it is just like an email, it is read or unread, we have basic meta data:  who is is from, when it was timestamped, and if it was regarding something in production (e.g. a director note on an asset) we see a link to that thing.  Notes also have their own set of statuses and when I get a note it is by default open and does not get closed until I close it manually.  Notes are threaded just like emails and go back and forth.  my inbox supports a gmail-like ability, so it is familiar (e.g. I can create smart folders to store different types of notes, e.g. by status, or by label, or by type )
+
+13. 

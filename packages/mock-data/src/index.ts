@@ -15,7 +15,7 @@ export { projects, pipelineSteps, sequences } from './project';
 export { assets, shots, tasks, versions, notes } from './generate';
 export { issues, bids, subBids, reels } from './customTables';
 export { tables } from './schema';
-export { folders, pages } from './pages';
+export { folders, pages, tablePlacements } from './pages';
 export { events } from './events';
 export {
   branchStatus,

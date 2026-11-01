@@ -63,6 +63,8 @@ export type StatusMeaning = 'not-started' | 'active' | 'review' | 'approved' | '
 export interface StatusValue {
   code: string;
   label: string;
+  /** Client-defined short name, used when a column displays statuses compactly. */
+  shortLabel: string;
   /** Client data, not a design token. */
   color: string;
   icon: string;
@@ -236,6 +238,8 @@ export interface Shot {
   status: string;
   frameIn: number;
   frameOut: number;
+  /** Calculated: Cut out - Cut in + 1 (both end frames count). */
+  totalFrames: number;
   dueDate: string;
   /** Calculated: due_date - 4 weeks. */
   animationDue: string;
@@ -359,10 +363,39 @@ export interface Widget {
   colSpan?: number;
 }
 
+export type StatusDisplay = 'long' | 'short' | 'icon';
+
+export type SummaryKind = 'sum' | 'average' | 'min' | 'max' | 'count';
+
+/** Per-column settings saved with a table page. */
+export interface ColumnSettings {
+  statusDisplay?: StatusDisplay;
+  /** Shown in group rows and the page's total row. */
+  summary?: SummaryKind;
+}
+
+/** A table the client filed into a folder; unplaced tables sit at their level's root. */
+export interface TablePlacement {
+  table: string;
+  scope: PageScope;
+  folderId: string;
+}
+
 export interface CardSettings {
   titleFields: string[];
   expandedFields: string[];
+  /** Cards per row, 1-10. */
+  columns?: number;
 }
+
+export interface ThumbSettings {
+  captionFields: string[];
+  /** Thumbnail width in pixels, set with the size slider. */
+  size?: number;
+}
+
+/** Every table page can flip between these views of the same query. */
+export type TableView = 'table' | 'card' | 'thumb';
 
 interface PageBase {
   id: string;
@@ -376,9 +409,11 @@ interface PageBase {
 
 export interface TablePage extends PageBase {
   type: 'table';
-  view: 'table' | 'card';
+  view: TableView;
   query: PageQuery;
+  columnSettings?: Record<string, ColumnSettings>;
   cardSettings?: CardSettings;
+  thumbSettings?: ThumbSettings;
 }
 
 export interface DashboardPage extends PageBase {

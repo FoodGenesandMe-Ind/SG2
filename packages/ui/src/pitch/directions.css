@@ -1,0 +1,170 @@
+/*
+ * Foundations pitch, status Proposed: three takes on "Shotgun, modernized", each in dark and light.
+ * Each wrapper overrides the --sgp-* tokens, so every component inside renders in that take.
+ * The approved take replaces design/tokens/tokens.css; the others are deleted.
+ */
+
+/* A: Classic, cleaned up. Dark chrome over bright work areas, Shotgun-style blue. */
+.sgp-dir-a.sgp-theme-light {
+  --sgp-color-bg: #eef0f3;
+  --sgp-color-surface: #ffffff;
+  --sgp-color-surface-raised: #ffffff;
+  --sgp-color-surface-sunken: #e6e9ed;
+  --sgp-color-border: #d9dde3;
+  --sgp-color-border-strong: #bfc5ce;
+  --sgp-color-text: #1d2127;
+  --sgp-color-text-muted: #56606c;
+  --sgp-color-text-subtle: #8a939e;
+  --sgp-color-text-inverse: #ffffff;
+  --sgp-color-chrome: #23272d;
+  --sgp-color-chrome-text: #eef0f3;
+  --sgp-color-chrome-muted: #a5adb8;
+  --sgp-color-nav: #f7f8fa;
+  --sgp-color-nav-active: #dce9fd;
+  --sgp-color-row-alt: #fafbfc;
+  --sgp-color-row-hover: #f1f5fb;
+  --sgp-color-row-selected: #dce9fd;
+  --sgp-color-accent: #2b7de9;
+  --sgp-color-accent-hover: #1f6bd1;
+  --sgp-color-accent-subtle: #dce9fd;
+  --sgp-radius-sm: 2px;
+  --sgp-radius-md: 4px;
+  --sgp-radius-lg: 6px;
+}
+
+.sgp-dir-a.sgp-theme-dark {
+  --sgp-color-bg: #1a1c1f;
+  --sgp-color-surface: #222529;
+  --sgp-color-surface-raised: #2a2e33;
+  --sgp-color-surface-sunken: #16181b;
+  --sgp-color-border: #33383f;
+  --sgp-color-border-strong: #49505a;
+  --sgp-color-text: #e7e9ec;
+  --sgp-color-text-muted: #a2aab4;
+  --sgp-color-text-subtle: #6f7882;
+  --sgp-color-text-inverse: #16181b;
+  --sgp-color-chrome: #101214;
+  --sgp-color-chrome-text: #e7e9ec;
+  --sgp-color-chrome-muted: #8d96a1;
+  --sgp-color-nav: #1e2124;
+  --sgp-color-nav-active: #233a5c;
+  --sgp-color-row-alt: #24272b;
+  --sgp-color-row-hover: #2a2f35;
+  --sgp-color-row-selected: #233a5c;
+  --sgp-color-accent: #4b93ff;
+  --sgp-color-accent-hover: #6aa6ff;
+  --sgp-color-accent-subtle: #233a5c;
+  --sgp-radius-sm: 2px;
+  --sgp-radius-md: 4px;
+  --sgp-radius-lg: 6px;
+}
+
+/* B: Studio neutral. True neutral grays for color-critical work, teal accent. */
+.sgp-dir-b.sgp-theme-light {
+  --sgp-color-bg: #e9e9e9;
+  --sgp-color-surface: #f6f6f6;
+  --sgp-color-surface-raised: #ffffff;
+  --sgp-color-surface-sunken: #e0e0e0;
+  --sgp-color-border: #d2d2d2;
+  --sgp-color-border-strong: #bababa;
+  --sgp-color-text: #222222;
+  --sgp-color-text-muted: #5a5a5a;
+  --sgp-color-text-subtle: #8a8a8a;
+  --sgp-color-text-inverse: #ffffff;
+  --sgp-color-chrome: #dedede;
+  --sgp-color-chrome-text: #222222;
+  --sgp-color-chrome-muted: #666666;
+  --sgp-color-nav: #e4e4e4;
+  --sgp-color-nav-active: #d0d0d0;
+  --sgp-color-row-alt: #efefef;
+  --sgp-color-row-hover: #e6e6e6;
+  --sgp-color-row-selected: #d3ebe9;
+  --sgp-color-accent: #1d877f;
+  --sgp-color-accent-hover: #17736c;
+  --sgp-color-accent-subtle: #d3ebe9;
+  --sgp-radius-sm: 3px;
+  --sgp-radius-md: 5px;
+  --sgp-radius-lg: 8px;
+}
+
+.sgp-dir-b.sgp-theme-dark {
+  --sgp-color-bg: #1c1c1c;
+  --sgp-color-surface: #242424;
+  --sgp-color-surface-raised: #2c2c2c;
+  --sgp-color-surface-sunken: #171717;
+  --sgp-color-border: #353535;
+  --sgp-color-border-strong: #4a4a4a;
+  --sgp-color-text: #e2e2e2;
+  --sgp-color-text-muted: #a3a3a3;
+  --sgp-color-text-subtle: #6e6e6e;
+  --sgp-color-text-inverse: #171717;
+  --sgp-color-chrome: #191919;
+  --sgp-color-chrome-text: #e2e2e2;
+  --sgp-color-chrome-muted: #8c8c8c;
+  --sgp-color-nav: #202020;
+  --sgp-color-nav-active: #333333;
+  --sgp-color-row-alt: #282828;
+  --sgp-color-row-hover: #303030;
+  --sgp-color-row-selected: #1c3633;
+  --sgp-color-accent: #3fb0a7;
+  --sgp-color-accent-hover: #55c4bb;
+  --sgp-color-accent-subtle: #1c3633;
+  --sgp-radius-sm: 3px;
+  --sgp-radius-md: 5px;
+  --sgp-radius-lg: 8px;
+}
+
+/* C: Bold production. Higher contrast, orange accent, softer shapes. */
+.sgp-dir-c.sgp-theme-light {
+  --sgp-color-bg: #f4f4f1;
+  --sgp-color-surface: #ffffff;
+  --sgp-color-surface-raised: #ffffff;
+  --sgp-color-surface-sunken: #ecece7;
+  --sgp-color-border: #e0e0da;
+  --sgp-color-border-strong: #c7c7bf;
+  --sgp-color-text: #151618;
+  --sgp-color-text-muted: #55585e;
+  --sgp-color-text-subtle: #898c92;
+  --sgp-color-text-inverse: #ffffff;
+  --sgp-color-chrome: #151618;
+  --sgp-color-chrome-text: #f4f4f1;
+  --sgp-color-chrome-muted: #a3a5aa;
+  --sgp-color-nav: #fbfbf9;
+  --sgp-color-nav-active: #fde5d3;
+  --sgp-color-row-alt: #fbfbf9;
+  --sgp-color-row-hover: #f7f3ee;
+  --sgp-color-row-selected: #fde5d3;
+  --sgp-color-accent: #e5661a;
+  --sgp-color-accent-hover: #cc5712;
+  --sgp-color-accent-subtle: #fde5d3;
+  --sgp-radius-sm: 4px;
+  --sgp-radius-md: 7px;
+  --sgp-radius-lg: 12px;
+}
+
+.sgp-dir-c.sgp-theme-dark {
+  --sgp-color-bg: #111317;
+  --sgp-color-surface: #191c21;
+  --sgp-color-surface-raised: #21252c;
+  --sgp-color-surface-sunken: #0d0f12;
+  --sgp-color-border: #282d35;
+  --sgp-color-border-strong: #3a414c;
+  --sgp-color-text: #f0f1f4;
+  --sgp-color-text-muted: #a8afbb;
+  --sgp-color-text-subtle: #6a7282;
+  --sgp-color-text-inverse: #111317;
+  --sgp-color-chrome: #0a0b0d;
+  --sgp-color-chrome-text: #f0f1f4;
+  --sgp-color-chrome-muted: #8a91a0;
+  --sgp-color-nav: #14161a;
+  --sgp-color-nav-active: #3a2416;
+  --sgp-color-row-alt: #1c1f25;
+  --sgp-color-row-hover: #22262d;
+  --sgp-color-row-selected: #3a2416;
+  --sgp-color-accent: #ff8a3d;
+  --sgp-color-accent-hover: #ff9e5e;
+  --sgp-color-accent-subtle: #3a2416;
+  --sgp-radius-sm: 4px;
+  --sgp-radius-md: 7px;
+  --sgp-radius-lg: 12px;
+}
