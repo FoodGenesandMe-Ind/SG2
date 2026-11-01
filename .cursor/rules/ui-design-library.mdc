@@ -1,0 +1,36 @@
+---
+description: UI must come from the approved design library; new UI is pitched as Proposed for Nephi's approval
+alwaysApply: true
+---
+
+# Approved design library only
+
+`design/registry.md` is the source of truth for allowed UI. Storybook (`packages/ui`) is the library.
+
+## Building screens
+
+- Use only components and patterns marked **Approved** in `design/registry.md`.
+- Style only with design tokens: Tailwind utilities mapped in `packages/ui/src/styles/theme.css` or `var(--sgp-*)` from `design/tokens/tokens.css`. No raw hex colors, pixel font sizes, or one-off shadows.
+- Exception: client data colors (status values, list values, conditional formatting) come from records at runtime, for example `statusValues` in `@sgp/mock-data`. Never hard-code status names, colors, or icons; render whatever the data says, legibly.
+- Prototype screens live in `apps/prototype` and use data from `@sgp/mock-data`, never invented placeholder content. Read tables, fields, labels, and visibility through `resolveTableConfig`, and navigation through `buildNavTree`, so per-project configuration is respected.
+
+```tsx
+// Bad: raw values, invented component
+<div style={{ background: '#1e1e1e', fontSize: 13 }}>...</div>
+
+// Good: tokens via Tailwind utilities
+<div className="bg-surface text-md text-fg">...</div>
+```
+
+## When something is missing
+
+Do not improvise it inside a screen. Instead:
+
+1. Build it in `packages/ui/src/` from existing tokens, with a story tagged `proposed`.
+2. Add a row to `design/registry.md` with status **Proposed**.
+3. Tell Nephi what it is, why it is needed, and which existing standards it follows.
+
+## Approval
+
+- Never mark anything **Approved** yourself. Only Nephi approves (the same no-self-approval rule the product enforces).
+- After Nephi approves: change the story tag to `approved`, export it from `packages/ui/src/index.ts`, and record the date in the registry.

@@ -1,0 +1,15 @@
+{
+  "name": "sgpipeline",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "design/tokens"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @sgp/prototype",
+    "storybook": "npm run storybook -w @sgp/ui",
+    "build": "npm run build -w @sgp/prototype && npm run build-storybook -w @sgp/ui",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

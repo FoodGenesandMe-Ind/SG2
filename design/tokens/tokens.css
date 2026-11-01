@@ -1,0 +1,90 @@
+/*
+ * SGPipeline design tokens.
+ * Status: Proposed. Placeholder values until the foundations pitch is approved
+ * (see design/registry.md). Components must reference these variables, never raw values.
+ */
+
+:root {
+  /* Surfaces: neutral dark so review media is judged against a color-neutral UI. */
+  --sgp-color-bg: #121314;
+  --sgp-color-surface: #1a1b1d;
+  --sgp-color-surface-raised: #222326;
+  --sgp-color-surface-sunken: #0d0e0f;
+  --sgp-color-border: #2e3034;
+  --sgp-color-border-strong: #45484d;
+
+  /* Text */
+  --sgp-color-text: #e8e9eb;
+  --sgp-color-text-muted: #a3a6ab;
+  --sgp-color-text-subtle: #6f7378;
+  --sgp-color-text-inverse: #121314;
+
+  /* Accent */
+  --sgp-color-accent: #4f9dff;
+  --sgp-color-accent-hover: #6aadff;
+  --sgp-color-accent-subtle: #1b2c42;
+
+  /* Feedback */
+  --sgp-color-danger: #ef5b5b;
+  --sgp-color-warning: #f2b544;
+  --sgp-color-success: #4cc38a;
+
+  /*
+   * Default data palette. Status values, list values, and conditional formatting
+   * colors are client data; these are the swatches offered by default and used by
+   * starter templates. Client-chosen colors outside this palette must also render legibly.
+   */
+  --sgp-palette-gray: #6f7378;
+  --sgp-palette-red: #ef5b5b;
+  --sgp-palette-orange: #f2864a;
+  --sgp-palette-amber: #f2b544;
+  --sgp-palette-lime: #a3cf4a;
+  --sgp-palette-green: #4cc38a;
+  --sgp-palette-teal: #2fb5a8;
+  --sgp-palette-cyan: #3fc1e6;
+  --sgp-palette-blue: #4f9dff;
+  --sgp-palette-indigo: #6e7cf2;
+  --sgp-palette-purple: #a27cf2;
+  --sgp-palette-pink: #e66fb0;
+
+  /* Review markup palette */
+  --sgp-markup-1: #ff4d4d;
+  --sgp-markup-2: #ffd23f;
+  --sgp-markup-3: #3fe0ff;
+  --sgp-markup-4: #ffffff;
+
+  /* Typography */
+  --sgp-font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sgp-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --sgp-font-script: "Courier Prime", "Courier New", Courier, monospace;
+
+  --sgp-text-xs: 0.6875rem;
+  --sgp-text-sm: 0.75rem;
+  --sgp-text-md: 0.8125rem;
+  --sgp-text-lg: 0.9375rem;
+  --sgp-text-xl: 1.125rem;
+  --sgp-text-2xl: 1.5rem;
+
+  /* Spacing (4px grid) */
+  --sgp-space-1: 0.25rem;
+  --sgp-space-2: 0.5rem;
+  --sgp-space-3: 0.75rem;
+  --sgp-space-4: 1rem;
+  --sgp-space-6: 1.5rem;
+  --sgp-space-8: 2rem;
+
+  /* Density: grid row heights */
+  --sgp-row-compact: 1.75rem;
+  --sgp-row-comfortable: 2.5rem;
+
+  /* Shape and depth */
+  --sgp-radius-sm: 3px;
+  --sgp-radius-md: 6px;
+  --sgp-radius-lg: 10px;
+  --sgp-shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.45);
+
+  /* Motion */
+  --sgp-duration-fast: 120ms;
+  --sgp-duration-base: 200ms;
+  --sgp-ease: cubic-bezier(0.2, 0, 0, 1);
+}

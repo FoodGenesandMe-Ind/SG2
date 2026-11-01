@@ -1,0 +1,56 @@
+@import "tailwindcss";
+@import "@sgp/tokens/tokens.css";
+
+@source "..";
+
+/*
+ * Maps chrome tokens to Tailwind utilities (bg-surface, text-fg-muted, ...).
+ * Data colors (status values, conditional formatting) are client data and are applied at runtime.
+ */
+@theme inline {
+  --color-canvas: var(--sgp-color-bg);
+  --color-surface: var(--sgp-color-surface);
+  --color-surface-raised: var(--sgp-color-surface-raised);
+  --color-surface-sunken: var(--sgp-color-surface-sunken);
+  --color-line: var(--sgp-color-border);
+  --color-line-strong: var(--sgp-color-border-strong);
+
+  --color-fg: var(--sgp-color-text);
+  --color-fg-muted: var(--sgp-color-text-muted);
+  --color-fg-subtle: var(--sgp-color-text-subtle);
+  --color-fg-inverse: var(--sgp-color-text-inverse);
+
+  --color-accent: var(--sgp-color-accent);
+  --color-accent-hover: var(--sgp-color-accent-hover);
+  --color-accent-subtle: var(--sgp-color-accent-subtle);
+
+  --color-danger: var(--sgp-color-danger);
+  --color-warning: var(--sgp-color-warning);
+  --color-success: var(--sgp-color-success);
+
+  --font-sans: var(--sgp-font-sans);
+  --font-mono: var(--sgp-font-mono);
+  --font-script: var(--sgp-font-script);
+
+  --text-xs: var(--sgp-text-xs);
+  --text-sm: var(--sgp-text-sm);
+  --text-md: var(--sgp-text-md);
+  --text-lg: var(--sgp-text-lg);
+  --text-xl: var(--sgp-text-xl);
+  --text-2xl: var(--sgp-text-2xl);
+
+  --radius-sm: var(--sgp-radius-sm);
+  --radius-md: var(--sgp-radius-md);
+  --radius-lg: var(--sgp-radius-lg);
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--sgp-color-bg);
+    color: var(--sgp-color-text);
+    font-family: var(--sgp-font-sans);
+    font-size: var(--sgp-text-md);
+    -webkit-font-smoothing: antialiased;
+  }
+}
