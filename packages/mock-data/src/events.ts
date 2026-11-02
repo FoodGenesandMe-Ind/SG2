@@ -119,8 +119,11 @@ for (const note of notes) {
     table: 'Note',
     recordId: note.id,
     projectId: note.projectId,
-    description: `${nameOf(note.authorId)} wrote a note on ${version.code}${note.frame ? ` at frame ${note.frame}` : ''}`,
+    description: note.parentNoteId
+      ? `${nameOf(note.authorId)} replied on ${version.code}`
+      : `${nameOf(note.authorId)} wrote a note on ${version.code}${note.frame ? ` at frame ${note.frame}` : ''}`,
   });
+  if (note.parentNoteId) continue;
   raw.push({
     at: note.createdAt,
     userId: note.authorId,

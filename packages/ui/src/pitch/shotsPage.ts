@@ -21,13 +21,25 @@ export const VIEW_ICON: Record<TableView, string> = {
   table: 'table',
   card: 'layout-list',
   thumb: 'layout-grid',
+  gantt: 'chart-gantt',
 };
 
 export const VIEW_LABEL: Record<TableView, string> = {
   table: 'Table',
   card: 'Cards',
   thumb: 'Thumbnails',
+  gantt: 'Gantt',
 };
+
+/**
+ * Table, Cards, and Thumbnails always; Gantt for the Tasks table and for tables whose has_tasks trait is on
+ * in this project (every gantt is a gantt of tasks).
+ */
+export function viewsFor(tableCode: string, projectId: string | null): TableView[] {
+  const table = resolveTableConfig(tableCode, projectId);
+  const gantt = !!table && (table.code === 'Task' || !!table.traits.hasTasks);
+  return gantt ? ['table', 'card', 'thumb', 'gantt'] : ['table', 'card', 'thumb'];
+}
 
 export const SUMMARY_LABEL: Record<SummaryKind, string> = {
   sum: 'Sum',

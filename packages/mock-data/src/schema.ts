@@ -4,11 +4,20 @@ const projectLink: FieldDef = { code: 'projectId', label: 'Project', type: 'enti
 
 const workflowStatuses = ['wtg', 'rdy', 'ip', 'rev', 'rtk', 'apr', 'omt'];
 
+/** Fields every table has, maintained by the platform. */
+const systemFields: FieldDef[] = [
+  { code: 'id', label: 'ID', type: 'text', system: true },
+  { code: 'createdAt', label: 'Date created', type: 'date', system: true },
+  { code: 'createdById', label: 'Created by', type: 'user', system: true },
+  { code: 'updatedAt', label: 'Date updated', type: 'date', system: true },
+  { code: 'updatedById', label: 'Updated by', type: 'user', system: true },
+];
+
 /**
  * Mirrors the platform's metadata catalog. Tables and fields are data, so pages,
  * the schema admin, and the navigation tree can render any table generically.
  */
-export const tables: TableDef[] = [
+const catalog: TableDef[] = [
   // Company level: system tables
   {
     code: 'Project',
@@ -70,6 +79,18 @@ export const tables: TableDef[] = [
     ],
   },
   {
+    code: 'Department',
+    label: 'Departments',
+    scope: 'company',
+    system: true,
+    icon: 'building',
+    fields: [
+      { code: 'name', label: 'Department', type: 'text', system: true },
+      { code: 'managerId', label: 'Manager', type: 'user' },
+      { code: 'coordinatorId', label: 'Coordinator', type: 'user' },
+    ],
+  },
+  {
     code: 'PipelineStep',
     label: 'Pipeline steps',
     scope: 'company',
@@ -77,6 +98,7 @@ export const tables: TableDef[] = [
     icon: 'git-branch',
     fields: [
       { code: 'templateId', label: 'Template', type: 'entity', linkTo: ['Template'], system: true },
+      { code: 'departmentId', label: 'Department', type: 'entity', linkTo: ['Department'], system: true },
       { code: 'code', label: 'Code', type: 'text', system: true },
       { code: 'name', label: 'Step', type: 'text', system: true },
       { code: 'appliesTo', label: 'Applies to', type: 'list', system: true },
@@ -111,6 +133,7 @@ export const tables: TableDef[] = [
     scope: 'company',
     system: false,
     icon: 'bug',
+    displayClass: 'threaded',
     fields: [
       { code: 'title', label: 'Issue', type: 'text' },
       { code: 'status', label: 'Status', type: 'status', validValues: ['open', 'ip', 'closed'] },
@@ -196,13 +219,18 @@ export const tables: TableDef[] = [
     icon: 'square-check',
     fields: [
       { ...projectLink },
+      { code: 'name', label: 'Task', type: 'text', system: true },
+      { code: 'parentTaskId', label: 'Parent task', type: 'entity', linkTo: ['Task'], system: true },
       { code: 'entityId', label: 'Link', type: 'entity', linkTo: ['Shot', 'Asset'], system: true },
       { code: 'stepId', label: 'Pipeline step', type: 'entity', linkTo: ['PipelineStep'], system: true },
       { code: 'assigneeId', label: 'Assigned to', type: 'user', system: true },
       { code: 'status', label: 'Status', type: 'status', system: true, validValues: workflowStatuses },
+      { code: 'startDate', label: 'Start', type: 'date', system: true },
+      { code: 'dueDate', label: 'Due', type: 'date', system: true },
       { code: 'bidDays', label: 'Bid', type: 'duration', system: true },
       { code: 'loggedDays', label: 'Time logged', type: 'duration', system: true },
-      { code: 'dueDate', label: 'Due', type: 'date', system: true },
+      { code: 'todos', label: 'To do', type: 'todos', system: true },
+      { code: 'dependencies', label: 'Depends on', type: 'multi-entity', linkTo: ['Task'], system: true },
     ],
   },
   {
@@ -228,9 +256,12 @@ export const tables: TableDef[] = [
     scope: 'project',
     system: true,
     icon: 'message-square',
+    displayClass: 'threaded',
     fields: [
       { ...projectLink },
       { code: 'versionId', label: 'Version', type: 'entity', linkTo: ['Version'], system: true },
+      { code: 'parentNoteId', label: 'Reply to', type: 'entity', linkTo: ['Note'], system: true },
+      { code: 'status', label: 'Status', type: 'list', system: true, validValues: ['open', 'closed'] },
       { code: 'authorId', label: 'Author', type: 'user', system: true },
       { code: 'toId', label: 'To', type: 'user', system: true },
       { code: 'body', label: 'Note', type: 'text', system: true },
@@ -287,3 +318,8 @@ export const tables: TableDef[] = [
     ],
   },
 ];
+
+export const tables: TableDef[] = catalog.map((t) => ({
+  ...t,
+  fields: [...t.fields, ...systemFields.filter((f) => !t.fields.some((own) => own.code === f.code))],
+}));

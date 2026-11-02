@@ -1,4 +1,4 @@
-import type { Asset, PipelineStep, Project, Sequence, Shot } from './types';
+import type { Asset, Department, PipelineStep, Project, Sequence, Shot } from './types';
 
 const ALL_CREW = ['p01', 'p02', 'p03', 'p04', 'p05', 'p06', 'p07', 'p08', 'p09', 'p10', 'p11', 'p12', 'p13', 'p14', 'p16', 'p17'];
 
@@ -52,17 +52,25 @@ export const projects: Project[] = [
   templateProject('tprj-games', 'TPL_GAMES', 'Video games'),
 ];
 
+export const departments: Department[] = [
+  { id: 'dep-assets', name: 'Assets', managerId: 'p04' },
+  { id: 'dep-story', name: 'Story', managerId: 'p02' },
+  { id: 'dep-layout', name: 'Layout', managerId: 'p04' },
+  { id: 'dep-anim', name: 'Animation', managerId: 'p05' },
+  { id: 'dep-finaling', name: 'Shot Finaling', managerId: 'p06', coordinatorId: 'p04' },
+];
+
 export const pipelineSteps: PipelineStep[] = [
-  { id: 'st-art', templateId: 'tpl-3d', code: 'ART', name: 'Art', appliesTo: 'Asset', order: 1, bidDays: 3 },
-  { id: 'st-mod', templateId: 'tpl-3d', code: 'MOD', name: 'Model', appliesTo: 'Asset', order: 2, bidDays: 5 },
-  { id: 'st-rig', templateId: 'tpl-3d', code: 'RIG', name: 'Rig', appliesTo: 'Asset', order: 3, bidDays: 4 },
-  { id: 'st-tex', templateId: 'tpl-3d', code: 'TEX', name: 'Texture', appliesTo: 'Asset', order: 4, bidDays: 3 },
-  { id: 'st-stb', templateId: 'tpl-3d', code: 'STB', name: 'Storyboard', appliesTo: 'Shot', order: 1, bidDays: 1 },
-  { id: 'st-lay', templateId: 'tpl-3d', code: 'LAY', name: 'Layout', appliesTo: 'Shot', order: 2, bidDays: 1.5 },
-  { id: 'st-anm', templateId: 'tpl-3d', code: 'ANM', name: 'Animation', appliesTo: 'Shot', order: 3, bidDays: 4 },
-  { id: 'st-fx', templateId: 'tpl-3d', code: 'FX', name: 'FX', appliesTo: 'Shot', order: 4, bidDays: 2 },
-  { id: 'st-lgt', templateId: 'tpl-3d', code: 'LGT', name: 'Lighting', appliesTo: 'Shot', order: 5, bidDays: 2 },
-  { id: 'st-cmp', templateId: 'tpl-3d', code: 'CMP', name: 'Comp', appliesTo: 'Shot', order: 6, bidDays: 1.5 },
+  { id: 'st-art', templateId: 'tpl-3d', departmentId: 'dep-assets', code: 'ART', name: 'Art', appliesTo: 'Asset', order: 1, bidDays: 3 },
+  { id: 'st-mod', templateId: 'tpl-3d', departmentId: 'dep-assets', code: 'MOD', name: 'Model', appliesTo: 'Asset', order: 2, bidDays: 5 },
+  { id: 'st-rig', templateId: 'tpl-3d', departmentId: 'dep-assets', code: 'RIG', name: 'Rig', appliesTo: 'Asset', order: 3, bidDays: 4 },
+  { id: 'st-tex', templateId: 'tpl-3d', departmentId: 'dep-assets', code: 'TEX', name: 'Texture', appliesTo: 'Asset', order: 4, bidDays: 3 },
+  { id: 'st-stb', templateId: 'tpl-3d', departmentId: 'dep-story', code: 'STB', name: 'Storyboard', appliesTo: 'Shot', order: 1, bidDays: 1 },
+  { id: 'st-lay', templateId: 'tpl-3d', departmentId: 'dep-layout', code: 'LAY', name: 'Layout', appliesTo: 'Shot', order: 2, bidDays: 1.5 },
+  { id: 'st-anm', templateId: 'tpl-3d', departmentId: 'dep-anim', code: 'ANM', name: 'Animation', appliesTo: 'Shot', order: 3, bidDays: 4 },
+  { id: 'st-fx', templateId: 'tpl-3d', departmentId: 'dep-finaling', code: 'FX', name: 'FX', appliesTo: 'Shot', order: 4, bidDays: 2 },
+  { id: 'st-lgt', templateId: 'tpl-3d', departmentId: 'dep-finaling', code: 'LGT', name: 'Lighting', appliesTo: 'Shot', order: 5, bidDays: 2 },
+  { id: 'st-cmp', templateId: 'tpl-3d', departmentId: 'dep-finaling', code: 'CMP', name: 'Comp', appliesTo: 'Shot', order: 6, bidDays: 1.5 },
 ];
 
 export const sequences: Sequence[] = [
@@ -159,7 +167,7 @@ const animationShotSpecs: Array<[string, number, number, string, string[]]> = [
 /** 0 = not started, 1 = complete, -1 = not ready to start. Drives generated task status. */
 export const shotProgress: Record<string, number> = {};
 
-export const animationShotSeeds: Omit<Shot, 'status'>[] = animationShotSpecs.map(
+export const animationShotSeeds: Omit<Shot, 'status' | 'updatedAt' | 'updatedById'>[] = animationShotSpecs.map(
   ([sequenceId, progress, length, description, assetIds], index) => {
     const sequence = sequences.find((s) => s.id === sequenceId)!;
     const indexInSequence = animationShotSpecs.slice(0, index + 1).filter(([seq]) => seq === sequenceId).length;
@@ -180,6 +188,8 @@ export const animationShotSeeds: Omit<Shot, 'status'>[] = animationShotSpecs.map
       dueDate,
       animationDue: addDays(dueDate, -28),
       assetIds,
+      createdAt: `2026-09-0${1 + (index % 3)}T1${index % 10}:15:00Z`,
+      createdById: 'p04',
     };
   },
 );
@@ -210,5 +220,9 @@ export const teaserShots: Shot[] = teaserShotSpecs.map(([status, length, cameraR
     animationDue: addDays(dueDate, -28),
     assetIds,
     cameraRoll,
+    createdAt: `2026-10-01T1${index}:30:00Z`,
+    createdById: 'p03',
+    updatedAt: `2026-10-2${4 + Math.min(index, 4)}T15:00:00Z`,
+    updatedById: 'p13',
   };
 });

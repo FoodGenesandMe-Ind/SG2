@@ -160,6 +160,7 @@ export const pages: Page[] = [
       columns: 4,
     },
     thumbSettings: { captionFields: ['code', 'status'], size: 192 },
+    ganttSettings: { startField: 'animationDue', endField: 'dueDate', zoom: 55 },
   },
   {
     id: 'pg-lmp-assets',
@@ -174,13 +175,20 @@ export const pages: Page[] = [
   },
   {
     id: 'pg-lmp-tasks',
-    name: 'Tasks by step',
+    name: 'Tasks',
     type: 'table',
-    view: 'table',
+    view: 'gantt',
     ownerId: 'p04',
     shared: true,
     folderId: 'f-lmp-production',
-    query: { table: 'Task', filters: [{ field: 'projectId', op: 'is', value: LMP }], groupBy: 'stepId' },
+    query: {
+      table: 'Task',
+      filters: [{ field: 'projectId', op: 'is', value: LMP }],
+      groupBy: 'stepId',
+      columns: ['name', 'entityId', 'assigneeId', 'status', 'startDate', 'dueDate', 'bidDays', 'loggedDays', 'todos'],
+    },
+    columnSettings: { status: { statusDisplay: 'long' } },
+    ganttSettings: { startField: 'startDate', endField: 'dueDate', zoom: 30 },
   },
   {
     id: 'pg-lmp-pending-review',

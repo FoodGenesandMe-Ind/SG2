@@ -22,6 +22,7 @@
   --color-chrome-muted: var(--sgp-color-chrome-muted);
   --color-nav: var(--sgp-color-nav);
   --color-nav-active: var(--sgp-color-nav-active);
+  --color-on-media: var(--sgp-color-on-media);
   --color-row-alt: var(--sgp-color-row-alt);
   --color-row-hover: var(--sgp-color-row-hover);
   --color-row-selected: var(--sgp-color-row-selected);

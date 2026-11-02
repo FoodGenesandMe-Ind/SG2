@@ -12,6 +12,7 @@ import type {
   PageScope,
   Project,
   TableDef,
+  TableTraits,
   Template,
 } from './types';
 
@@ -25,8 +26,9 @@ export interface EffectiveField extends FieldDef {
   hidden: boolean;
 }
 
-export interface EffectiveTable extends Omit<TableDef, 'fields'> {
+export interface EffectiveTable extends Omit<TableDef, 'fields' | 'traits'> {
   hidden: boolean;
+  traits: TableTraits;
   fields: EffectiveField[];
 }
 
@@ -74,9 +76,11 @@ export function resolveTableConfig(tableCode: string, projectId: string | null):
 
   let label = table.label;
   let hidden = false;
+  let traits: TableTraits = { ...table.traits };
   for (const layer of layers.filter((l) => !l.field)) {
     if (layer.label) label = layer.label;
     if (layer.hidden !== undefined) hidden = layer.hidden;
+    if (layer.traits) traits = { ...traits, ...layer.traits };
   }
 
   const fields = table.fields.map((field): EffectiveField => {
@@ -89,7 +93,7 @@ export function resolveTableConfig(tableCode: string, projectId: string | null):
     return effective;
   });
 
-  return { ...table, label, hidden, fields };
+  return { ...table, label, hidden, traits, fields };
 }
 
 // ---------------------------------------------------------------------------

@@ -11,9 +11,9 @@ export {
   renderAdapters,
 } from './company';
 export { people } from './people';
-export { projects, pipelineSteps, sequences } from './project';
+export { projects, pipelineSteps, sequences, departments } from './project';
 export { assets, shots, tasks, versions, notes } from './generate';
-export { issues, bids, subBids, reels } from './customTables';
+export { issues, issueComments, bids, subBids, reels } from './customTables';
 export { tables } from './schema';
 export { folders, pages, tablePlacements } from './pages';
 export { events } from './events';

@@ -1,4 +1,5 @@
 import {
+  addDays,
   animationShotSeeds,
   assetProgress,
   assetSeeds,
@@ -100,6 +101,28 @@ const retakeNotes: Record<string, string[]> = {
 
 const approvalNotes = ['Approved. Beautiful work.', 'Approved. Moving on to the next step.'];
 
+const subTaskNames = ['Blocking', 'Spline', 'Polish'];
+
+const todoTexts: Record<string, string[]> = {
+  ART: ['Silhouette pass', 'Color keys', 'Turnaround sheet', 'Expression sheet'],
+  MOD: ['Blockout', 'Topology pass', 'UV layout', 'Hand off to rigging'],
+  RIG: ['Skeleton', 'Facial controls', 'Space switches', 'Rig test animation'],
+  TEX: ['Base materials', 'Wear and dirt', 'Look-dev turntable', 'Texture publish'],
+  STB: ['Thumbnails', 'Clean-up boards', 'Camera notes', 'Export panels'],
+  LAY: ['Camera blocking', 'Set dressing check', 'Lens and framing', 'Layout publish'],
+  ANM: ['Lip sync', 'Hand contacts', 'Arc pass', 'Final playblast'],
+  FX: ['Flame sim', 'Smoke sim', 'Cache publish'],
+  LGT: ['Key and fill', 'Lamp pools', 'Render layers', 'Light publish'],
+  CMP: ['Plate prep', 'Matte integration', 'Grade', 'Final render check'],
+};
+
+function buildTodos(taskId: string, stepCode: string, status: string, h: number) {
+  if (status === 'wtg') return [];
+  const texts = todoTexts[stepCode].slice(0, 2 + (h % 3));
+  const doneCount = status === 'apr' ? texts.length : status === 'rdy' ? 0 : Math.floor(texts.length / 2);
+  return texts.map((text, i) => ({ id: `${taskId}-todo-${i + 1}`, text, done: i < doneCount }));
+}
+
 function pick<T>(items: T[], key: string): T {
   return items[hash(key) % items.length];
 }
@@ -161,9 +184,12 @@ function buildEntity(entity: EntityRef, steps: PipelineStep[]): string[] {
           ? Math.round(step.bidDays * 0.5 * 10) / 10
           : 0;
 
+    const startOffset = dueOffset - Math.max(2, Math.round(step.bidDays * 1.4));
+    const taskId = `t-${entity.id}-${step.code.toLowerCase()}`;
     const task: Task = {
-      id: `t-${entity.id}-${step.code.toLowerCase()}`,
+      id: taskId,
       projectId: ANIMATION_PROJECT_ID,
+      name: step.name,
       entityType: entity.type,
       entityId: entity.id,
       stepId: step.id,
@@ -171,9 +197,30 @@ function buildEntity(entity: EntityRef, steps: PipelineStep[]): string[] {
       status,
       bidDays: step.bidDays,
       loggedDays,
+      startDate: isoAt(startOffset).slice(0, 10),
       dueDate: isoAt(dueOffset).slice(0, 10),
+      todos: buildTodos(taskId, step.code, status, h),
     };
     tasks.push(task);
+
+    if (step.code === 'ANM' && status !== 'wtg' && status !== 'rdy') {
+      const span = dueOffset - startOffset;
+      subTaskNames.forEach((name, i) => {
+        const subStatus = status === 'apr' ? 'apr' : i === 0 ? 'apr' : i === 1 ? (status === 'rev' ? 'rev' : 'ip') : 'wtg';
+        tasks.push({
+          ...task,
+          id: `${taskId}-${name.toLowerCase()}`,
+          parentTaskId: taskId,
+          name,
+          status: subStatus,
+          bidDays: Math.round((step.bidDays / 3) * 10) / 10,
+          loggedDays: subStatus === 'apr' ? Math.round((loggedDays / 3) * 10) / 10 : subStatus === 'wtg' ? 0 : 0.5,
+          startDate: isoAt(startOffset + Math.round((span * i) / 3)).slice(0, 10),
+          dueDate: isoAt(startOffset + Math.round((span * (i + 1)) / 3)).slice(0, 10),
+          todos: [],
+        });
+      });
+    }
 
     const versionCount =
       status === 'ip' ? h % 2 : status === 'apr' || status === 'rev' || status === 'rtk' ? 1 + (h % 3) : 0;
@@ -206,9 +253,11 @@ function buildEntity(entity: EntityRef, steps: PipelineStep[]): string[] {
 
       if (versionStatus === 'rtk') {
         const length = entity.frameOut - entity.frameIn + 1;
+        const addressed = !isLatest;
         notes.push({
           id: `n-${version.id}`,
           projectId: ANIMATION_PROJECT_ID,
+          status: addressed ? 'closed' : 'open',
           versionId: version.id,
           authorId: reviewerId,
           toId: assigneeId,
@@ -217,10 +266,25 @@ function buildEntity(entity: EntityRef, steps: PipelineStep[]): string[] {
           hasMarkup: hash(`${code}:markup`) % 2 === 0,
           createdAt: isoAt(submittedOffset + 1),
         });
+        if (addressed) {
+          notes.push({
+            id: `n-${version.id}-reply`,
+            projectId: ANIMATION_PROJECT_ID,
+            parentNoteId: `n-${version.id}`,
+            status: 'closed',
+            versionId: version.id,
+            authorId: assigneeId,
+            toId: reviewerId,
+            body: `Thanks. Addressed in v${String(n + 1).padStart(3, '0')}.`,
+            hasMarkup: false,
+            createdAt: isoAt(submittedOffset + 1.8),
+          });
+        }
       } else if (versionStatus === 'apr') {
         notes.push({
           id: `n-${version.id}`,
           projectId: ANIMATION_PROJECT_ID,
+          status: 'closed',
           versionId: version.id,
           authorId: reviewerId,
           toId: assigneeId,
@@ -268,8 +332,86 @@ const animationShots: Shot[] = animationShotSeeds.map((seed) => {
     },
     shotSteps,
   );
-  return { ...seed, status: shotStatus(statuses, shotSteps) };
+  const latest = versions
+    .filter((v) => v.taskId.startsWith(`t-${seed.id}-`))
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];
+  return {
+    ...seed,
+    status: shotStatus(statuses, shotSteps),
+    updatedAt: latest?.submittedAt ?? seed.createdAt,
+    updatedById: latest?.createdById ?? seed.createdById,
+  };
 });
+
+const taskById = (id: string) => tasks.find((t) => t.id === id)!;
+
+// Sub-tasks under one task, each with its own assignee and to-do list (Comp on 010_0030).
+{
+  const comp = taskById('t-sh010_30-cmp');
+  comp.todos = [];
+  tasks.push(
+    {
+      ...comp,
+      id: `${comp.id}-roto`,
+      parentTaskId: comp.id,
+      name: "Roto Pip's wings",
+      assigneeId: 'p10',
+      status: 'apr',
+      bidDays: 0.5,
+      loggedDays: 0.6,
+      dueDate: addDays(comp.startDate, 1),
+      todos: [
+        { id: `${comp.id}-roto-1`, text: 'Left wing mattes', done: true },
+        { id: `${comp.id}-roto-2`, text: 'Right wing mattes', done: true },
+        { id: `${comp.id}-roto-3`, text: 'Motion blur check', done: true },
+      ],
+    },
+    {
+      ...comp,
+      id: `${comp.id}-matte`,
+      parentTaskId: comp.id,
+      name: 'Skyline matte integration',
+      assigneeId: 'p11',
+      status: 'ip',
+      bidDays: 1,
+      loggedDays: 0.5,
+      startDate: addDays(comp.startDate, 1),
+      todos: [
+        { id: `${comp.id}-matte-1`, text: 'Match haze to plate', done: true },
+        { id: `${comp.id}-matte-2`, text: 'Edge blend on rooftops', done: false },
+        { id: `${comp.id}-matte-3`, text: 'Grade to the lamp pools', done: false },
+      ],
+    },
+  );
+}
+
+// One example of each dependency type on 030_0010, with dates that honor them.
+{
+  const t = (step: string) => taskById(`t-sh030_10-${step}`);
+  const [stb, lay, anm, fx, lgt, cmp] = ['stb', 'lay', 'anm', 'fx', 'lgt', 'cmp'].map(t);
+  lay.startDate = addDays(stb.dueDate, 1);
+  lay.dependencies = [{ predecessorId: stb.id, type: 'FS' }];
+  anm.startDate = addDays(lay.dueDate, -1);
+  anm.dependencies = [{ predecessorId: lay.id, type: 'FS' }];
+  fx.startDate = anm.startDate;
+  fx.dependencies = [{ predecessorId: anm.id, type: 'SS' }];
+  lgt.dependencies = [{ predecessorId: fx.id, type: 'SF' }];
+  cmp.dueDate = lgt.dueDate;
+  cmp.startDate = addDays(lgt.dueDate, -3);
+  cmp.dependencies = [{ predecessorId: lgt.id, type: 'FF' }];
+}
+
+// Read receipts and status history, shown inline in note threads.
+for (const note of notes) {
+  if (note.parentNoteId) continue;
+  const created = Date.parse(note.createdAt);
+  note.readBy = [{ personId: note.toId, at: new Date(created + 0.15 * DAY_MS).toISOString() }];
+  if (note.status === 'closed') {
+    const reply = notes.find((r) => r.parentNoteId === note.id);
+    const closedAt = reply ? Date.parse(reply.createdAt) + 0.05 * DAY_MS : created + 0.4 * DAY_MS;
+    note.statusChanges = [{ from: 'open', to: 'closed', byId: note.toId, at: new Date(closedAt).toISOString() }];
+  }
+}
 
 export const shots: Shot[] = [...animationShots, ...teaserShots];
 

@@ -21,7 +21,8 @@ export type FieldType =
   | 'url'
   | 'color'
   | 'calculated'
-  | 'summary';
+  | 'summary'
+  | 'todos';
 
 /**
  * Structured expression tree built by the visual formula builder. Users never type syntax;
@@ -54,7 +55,34 @@ export interface TableDef {
   /** Shipped with the product; can be relabeled and hidden, not deleted. */
   system: boolean;
   icon: string;
+  /** Detail-page standard: 'threaded' tables (Notes, Issues) open as an email-style thread with a side pane. */
+  displayClass?: 'standard' | 'threaded';
+  /** Table-type traits; usually set per template or project through configuration layers. */
+  traits?: TableTraits;
   fields: FieldDef[];
+}
+
+/**
+ * Table types (see Expectations_Fundamentals.md, item 15). Tasks is its own type; other tables
+ * can carry tasks, organize them by pipeline step, and group steps into departments.
+ */
+export interface TableTraits {
+  hasTasks?: boolean;
+  hasSteps?: boolean;
+  hasDepartments?: boolean;
+}
+
+/** Non-reply entries that appear inline in a thread. */
+export interface ReadReceipt {
+  personId: string;
+  at: string;
+}
+
+export interface StatusChange {
+  from: string;
+  to: string;
+  byId: string;
+  at: string;
 }
 
 /** Platform meaning lets reports and automations understand client-invented statuses. */
@@ -84,6 +112,8 @@ export interface FieldConfigLayer {
   label?: string;
   /** Status or list codes allowed at this layer, in display order. */
   validValues?: string[];
+  /** Table-level layers only: table-type traits for this template or project. */
+  traits?: TableTraits;
 }
 
 /** A template is a project kept in Company > Templates; new projects start as a copy of one. */
@@ -203,17 +233,43 @@ export interface Issue {
   title: string;
   status: string;
   reporterId: string;
+  assigneeId?: string;
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+  tags?: string[];
   projectId: string | null;
   createdAt: string;
+  readBy?: ReadReceipt[];
+  statusChanges?: StatusChange[];
+}
+
+export interface IssueComment {
+  id: string;
+  issueId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+  /** Internal comments are visible to staff only, as in help-desk tools. */
+  internal?: boolean;
+  /** Attached file names. */
+  attachments?: string[];
 }
 
 // ---------------------------------------------------------------------------
 // Project-level records
 // ---------------------------------------------------------------------------
 
+/** Optional second layer of pipeline organization, e.g. "Shot Finaling" holding Lighting, FX, and Comp. */
+export interface Department {
+  id: string;
+  name: string;
+  managerId?: string;
+  coordinatorId?: string;
+}
+
 export interface PipelineStep {
   id: string;
   templateId: string;
+  departmentId: string;
   code: string;
   name: string;
   appliesTo: 'Shot' | 'Asset';
@@ -245,6 +301,10 @@ export interface Shot {
   animationDue: string;
   assetIds: string[];
   cameraRoll?: string;
+  createdAt: string;
+  createdById: string;
+  updatedAt: string;
+  updatedById: string;
 }
 
 export type AssetType = 'character' | 'set' | 'prop' | 'matte' | 'crowd';
@@ -260,9 +320,31 @@ export interface Asset {
   status: string;
 }
 
+/** Freeform checklist item on a task or sub-task; not assignable. */
+export interface Todo {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+/**
+ * FS: finish-to-start (successor starts after predecessor finishes). SS: start-to-start.
+ * FF: finish-to-finish. SF: start-to-finish (successor can't finish until predecessor starts).
+ */
+export type DependencyType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface TaskDependency {
+  predecessorId: string;
+  type: DependencyType;
+}
+
 export interface Task {
   id: string;
   projectId: string;
+  dependencies?: TaskDependency[];
+  /** Sub-tasks carry a parent; top-level tasks do not. */
+  parentTaskId?: string;
+  name: string;
   entityType: 'Shot' | 'Asset';
   entityId: string;
   stepId: string;
@@ -270,7 +352,9 @@ export interface Task {
   status: string;
   bidDays: number;
   loggedDays: number;
+  startDate: string;
   dueDate: string;
+  todos: Todo[];
 }
 
 export interface Version {
@@ -291,6 +375,10 @@ export interface Version {
 export interface Note {
   id: string;
   projectId: string;
+  /** Replies thread under their parent, like email. */
+  parentNoteId?: string;
+  /** Open until the recipient closes it. */
+  status: 'open' | 'closed';
   versionId: string;
   authorId: string;
   toId: string;
@@ -299,6 +387,8 @@ export interface Note {
   frame?: number;
   hasMarkup: boolean;
   createdAt: string;
+  readBy?: ReadReceipt[];
+  statusChanges?: StatusChange[];
 }
 
 export interface Bid {
@@ -394,8 +484,15 @@ export interface ThumbSettings {
   size?: number;
 }
 
-/** Every table page can flip between these views of the same query. */
-export type TableView = 'table' | 'card' | 'thumb';
+export interface GanttSettings {
+  startField: string;
+  endField: string;
+  /** Time scale slider position, 0 (days) to 100 (years). */
+  zoom?: number;
+}
+
+/** Every table page can flip between these views of the same query; gantt needs date fields. */
+export type TableView = 'table' | 'card' | 'thumb' | 'gantt';
 
 interface PageBase {
   id: string;
@@ -414,6 +511,7 @@ export interface TablePage extends PageBase {
   columnSettings?: Record<string, ColumnSettings>;
   cardSettings?: CardSettings;
   thumbSettings?: ThumbSettings;
+  ganttSettings?: GanttSettings;
 }
 
 export interface DashboardPage extends PageBase {

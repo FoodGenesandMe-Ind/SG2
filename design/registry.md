@@ -27,6 +27,16 @@ The source of truth for which UI is allowed. Agents build only from entries mark
 | Search fields: Global search, Search shots (page), Search navigation | Approved | All Studio neutral stories | Search icon in each | 2026-11-01 |
 | Column header right-click menu (status display) | Approved | Studio neutral/Interaction: status display from the column menu | Sort, group, and hide are placeholders | 2026-11-01 |
 | Left navigation: no Company grouper; docked and undocked | Approved | Studio neutral/Navigation: docked and undocked | Tables filed into folders like pages | 2026-11-01 |
+| Shot detail page (Flow-style header, pipeline strip, tabs: Activity, Shot info, Tasks, Versions, Notes, Publishes, Assets) | Proposed | Studio neutral/Shot detail page | Tabs are pages with full view options; no History tab; + Note on the Notes tab opens the note form | |
+| Threaded detail standard (Notes, Issues): one collapsible thread, inline events, order toggle, side pane, public reply or internal note | Proposed | Studio neutral/Note detail page, Issue detail page | Replaces the tabbed note page | |
+| Task dependencies (lines without labels; violations in red with "!") and sub-tasks with their own assignees and to-dos | Proposed | Studio neutral/Tasks: dependencies, Tasks: sub-tasks | Dates never move automatically | |
+| Gantt bar labels via right-click (left and right of bars; none by default) | Proposed | Studio neutral/Shots page: gantt view | | |
+| Record-type icons and selection in every view (Table, Gantt, Cards, Thumbnails) | Proposed | Studio neutral/Table view, Card view, Thumbnail view, Shots page: gantt view | Cards and thumbnails: icon left of the linked name; header box in the bar above | |
+| Record info tab with every field (system fields, code and type, hidden-field toggle) | Proposed | Studio neutral/Shot detail page, Shot info tab | | |
+| Reporting charts: pie, donut, vertical bar, horizontal bar, stacked bar, line, area, heat map, line + column combo | Proposed | Studio neutral/Dashboard: reporting charts | ECharts, themed from tokens | |
+| Page inside a tab (shared RecordPage: count, search, views, controls, + button) | Proposed | Every detail-page tab | Also supplies Cards and Thumbnails for the Tasks page | |
+| Gantt view with time scale slider (Days to Years) | Proposed | Studio neutral/Tasks page: gantt view, Shots page: gantt view | Always a gantt of tasks; offered on Tasks, Shots, Assets pages | |
+| Tasks page (department, step, task, sub-task grouping; to-do summary; table with totals at top) | Proposed | Studio neutral/Tasks page: gantt view | All four views | |
 | App frame specimen: top bar, left nav tree, page header, grouped shot grid, card, controls | Approved | Same pitch | Approved as the design; still pitch specimens. Next: rebuilt as real `@sgp/ui` components | 2026-11-01 |
 
 ## Components

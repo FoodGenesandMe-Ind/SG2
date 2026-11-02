@@ -1,15 +1,36 @@
 import { company, type StatusDisplay, type TableView } from '@sgp/mock-data';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { ColumnMenu } from './ColumnMenu';
 import { ComponentStrip } from './ComponentStrip';
 import type { Direction } from './directions';
+import { GanttZoomSlider } from './Gantt';
 import { Icon } from './Icon';
 import { NavTreeSpecimen, type NavMode } from './NavTreeSpecimen';
+import { NoteDetail } from './NoteDetail';
+import { RecordCards, RecordThumbs } from './RecordPage';
+import { taskSpec } from './recordSpecs';
+import { ShotDetail, type ShotTab } from './ShotDetail';
+import { DashboardPage } from './Dashboard';
+import { IssueDetail } from './IssueDetail';
 import { ShotGridSpecimen } from './ShotGridSpecimen';
 import { ShotCardsView, ShotThumbsView } from './ShotViews';
-import { getShotsPage, VIEW_ICON, VIEW_LABEL } from './shotsPage';
+import { getTasksPage, TASKS_PAGE_ID, TasksGantt, TasksTable } from './TasksPage';
+import { tasks as allTasks } from '@sgp/mock-data';
+import { AddButton, CardColumnsPicker, clampColumns, SearchField, ThumbSizeSlider, ViewSwitcher } from './PageControls';
+import { getShotsPage, viewsFor } from './shotsPage';
 
-const VIEWS: TableView[] = ['table', 'card', 'thumb'];
+const SHOTS_PAGE_ID = 'pg-lmp-shots';
+const DASHBOARD_PAGE_ID = 'pg-lmp-producer-dashboard';
+const NAV_MODE_KEY = 'sgp.navMode';
+
+const PROJECT_ID = 'prj01';
+
+export type SpecimenPage = 'shots' | 'tasks' | 'dashboard';
+
+export type SpecimenDetail =
+  | { kind: 'shot'; id: string; tab?: ShotTab }
+  | { kind: 'note'; id: string }
+  | { kind: 'issue'; id: string };
 
 function TopBar() {
   return (
@@ -39,67 +60,24 @@ function TopBar() {
   );
 }
 
-export const THUMB_SIZE = { min: 96, max: 384, step: 8 };
-export const CARD_COLUMNS = { min: 1, max: 10 };
-
-function ThumbSizeSlider({ size, onSize }: { size: number; onSize: (size: number) => void }) {
-  return (
-    <label className="flex items-center gap-1.5 text-fg-subtle" title="Thumbnail size">
-      <Icon name="image" size={12} />
-      <input
-        type="range"
-        aria-label="Thumbnail size"
-        min={THUMB_SIZE.min}
-        max={THUMB_SIZE.max}
-        step={THUMB_SIZE.step}
-        value={size}
-        onChange={(event) => onSize(Number(event.target.value))}
-        className="w-28 accent-[var(--sgp-color-accent)]"
-      />
-      <Icon name="image" size={17} />
-    </label>
-  );
-}
-
-function CardColumnsPicker({ columns, onStep }: { columns: number; onStep: (delta: number) => void }) {
-  const step = onStep;
-  const button =
-    'flex h-full w-6 items-center justify-center text-fg-muted hover:bg-row-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent';
-  return (
-    <div
-      className="flex items-center overflow-hidden rounded-md border border-line-strong text-sm"
-      style={{ height: 'var(--sgp-row-compact)' }}
-    >
-      <span className="flex items-center gap-1 px-2 text-fg-subtle">
-        <Icon name="columns-3" size={13} /> Columns
-      </span>
-      <button className={button} aria-label="Fewer columns" disabled={columns <= CARD_COLUMNS.min} onClick={() => step(-1)}>
-        <Icon name="minus" size={12} />
-      </button>
-      <span role="status" aria-label="Card columns" className="w-6 text-center font-medium tabular-nums">
-        {columns}
-      </span>
-      <button className={button} aria-label="More columns" disabled={columns >= CARD_COLUMNS.max} onClick={() => step(1)}>
-        <Icon name="plus" size={12} />
-      </button>
-    </div>
-  );
-}
-
 function PageHeader({
+  title,
+  summary,
+  searchLabel,
+  addLabel,
+  views,
   view,
   onView,
-  thumbSize,
-  onThumbSize,
-  cardColumns,
-  onCardColumns,
+  controls,
 }: {
+  title: string;
+  summary: string;
+  searchLabel: string;
+  addLabel: string;
+  views: TableView[];
   view: TableView;
   onView: (view: TableView) => void;
-  thumbSize: number;
-  onThumbSize: (size: number) => void;
-  cardColumns: number;
-  onCardColumns: (delta: number) => void;
+  controls?: ReactNode;
 }) {
   const height = { height: 'var(--sgp-row-compact)' };
   return (
@@ -109,56 +87,33 @@ function PageHeader({
         <Icon name="chevron-right" size={12} />
         <span>Production</span>
         <Icon name="chevron-right" size={12} />
-        <span className="text-fg-muted">Shots</span>
+        <span className="text-fg-muted">{title}</span>
       </div>
       <div className="flex items-center gap-2">
-        <h1 className="mr-2 text-xl font-semibold">Shots</h1>
-        <span className="text-sm text-fg-subtle">11 shots in 3 sequences</span>
-        <span className="ml-auto flex items-center">
-          {view === 'thumb' && <ThumbSizeSlider size={thumbSize} onSize={onThumbSize} />}
-          {view === 'card' && <CardColumnsPicker columns={cardColumns} onStep={onCardColumns} />}
-        </span>
-        <label
-          className="flex w-56 items-center gap-2 rounded-md border border-line-strong bg-surface-sunken px-2 text-sm text-fg-subtle focus-within:border-accent"
-          style={height}
-        >
-          <Icon name="search" className="shrink-0" />
-          <input
-            aria-label="Search shots"
-            placeholder="Search shots"
-            className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-subtle"
-          />
-        </label>
+        <h1 className="mr-2 text-xl font-semibold">{title}</h1>
+        <span className="text-sm text-fg-subtle">{summary}</span>
+        <span className="ml-auto flex items-center">{controls}</span>
+        <SearchField label={searchLabel} />
         <span
           className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-sm text-fg-muted"
           style={height}
         >
-          <Icon name="sliders-horizontal" /> Sequence
+          <Icon name="sliders-horizontal" /> Group
         </span>
-        <div role="radiogroup" aria-label="View" className="flex rounded-md border border-line-strong p-0.5 text-sm" style={height}>
-          {VIEWS.map((v) => (
-            <button
-              key={v}
-              role="radio"
-              aria-checked={view === v}
-              aria-label={VIEW_LABEL[v]}
-              title={VIEW_LABEL[v]}
-              onClick={() => onView(v)}
-              className={`flex items-center rounded-sm px-1.5 ${
-                view === v ? 'bg-accent-subtle text-fg' : 'text-fg-muted hover:text-fg'
-              }`}
-            >
-              <Icon name={VIEW_ICON[v]} />
-            </button>
-          ))}
-        </div>
-        <span
-          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 text-sm font-medium text-fg-inverse"
-          style={height}
-        >
-          <Icon name="plus" /> Shot
-        </span>
+        <ViewSwitcher views={views} view={view} onView={onView} />
+        <AddButton label={addLabel} />
       </div>
+    </div>
+  );
+}
+
+/** States plainly what a gantt is showing: always tasks, with the grouping in use. */
+function GanttScope({ text }: { text: string }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface-sunken px-4 py-1.5 text-xs text-fg-muted">
+      <Icon name="chart-gantt" size={13} className="text-fg-subtle" />
+      {text}
+      <span className="ml-auto text-fg-subtle">Right-click the timeline to show fields beside the bars.</span>
     </div>
   );
 }
@@ -166,10 +121,12 @@ function PageHeader({
 export interface SpecimenProps {
   direction: Direction;
   theme: 'dark' | 'light';
+  initialPage?: SpecimenPage;
   initialView?: TableView;
   initialStatusDisplay?: StatusDisplay;
   initialNavMode?: NavMode;
   initialNavOpen?: boolean;
+  initialDetail?: SpecimenDetail;
   showComponents?: boolean;
   height?: number;
 }
@@ -177,24 +134,197 @@ export interface SpecimenProps {
 export function Specimen({
   direction,
   theme,
-  initialView = 'table',
+  initialPage = 'shots',
+  initialView,
   initialStatusDisplay,
-  initialNavMode = 'docked',
+  initialNavMode,
   initialNavOpen = false,
+  initialDetail,
   showComponents = true,
   height = 600,
 }: SpecimenProps) {
   const shotsPage = getShotsPage();
-  const [view, setView] = useState<TableView>(initialView);
+  const tasksPage = getTasksPage();
+  const [page, setPage] = useState<SpecimenPage>(initialPage);
+  const [detail, setDetail] = useState<SpecimenDetail | null>(initialDetail ?? null);
+  const openShot = (id: string) => setDetail({ kind: 'shot', id });
+  const [shotsView, setShotsView] = useState<TableView>(initialPage === 'shots' ? initialView ?? 'table' : 'table');
+  const [tasksView, setTasksView] = useState<TableView>(
+    initialPage === 'tasks' ? initialView ?? tasksPage.page.view : tasksPage.page.view,
+  );
   const [statusDisplay, setStatusDisplay] = useState<StatusDisplay>(
     initialStatusDisplay ?? shotsPage.settings.status?.statusDisplay ?? 'long',
   );
-  const [navMode, setNavMode] = useState<NavMode>(initialNavMode);
+  const [navMode, setNavModeState] = useState<NavMode>(
+    () => initialNavMode ?? ((typeof localStorage !== 'undefined' && (localStorage.getItem(NAV_MODE_KEY) as NavMode)) || 'docked'),
+  );
+  const setNavMode = (mode: NavMode) => {
+    setNavModeState(mode);
+    if (typeof localStorage !== 'undefined') localStorage.setItem(NAV_MODE_KEY, mode);
+  };
   const [navOpen, setNavOpen] = useState(initialNavOpen);
   const [thumbSize, setThumbSize] = useState(shotsPage.page.thumbSettings?.size ?? 192);
   const [cardColumns, setCardColumns] = useState(shotsPage.page.cardSettings?.columns ?? 4);
+  const [shotsZoom, setShotsZoom] = useState(shotsPage.page.ganttSettings?.zoom ?? 55);
+  const [tasksZoom, setTasksZoom] = useState(tasksPage.page.ganttSettings?.zoom ?? 30);
   const [menu, setMenu] = useState<{ x: number; y: number; field: string; label: string } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+
+  const activePageId =
+    detail?.kind === 'issue'
+      ? 'pg-issues'
+      : page === 'shots'
+        ? SHOTS_PAGE_ID
+        : page === 'tasks'
+          ? TASKS_PAGE_ID
+          : DASHBOARD_PAGE_ID;
+  const openPage = (pageId: string) => {
+    if (pageId === SHOTS_PAGE_ID) setPage('shots');
+    else if (pageId === TASKS_PAGE_ID) setPage('tasks');
+    else if (pageId === DASHBOARD_PAGE_ID) setPage('dashboard');
+    else return;
+    setDetail(null);
+  };
+
+  const shotsContent = () => {
+    if (detail?.kind === 'issue') {
+      return <IssueDetail key={detail.id} issueId={detail.id} direction={direction} />;
+    }
+    if (detail?.kind === 'note') {
+      return (
+        <NoteDetail
+          key={detail.id}
+          noteId={detail.id}
+          direction={direction}
+          statusDisplay={statusDisplay}
+          onBackToShot={(id) => setDetail({ kind: 'shot', id, tab: 'notes' })}
+          onBackToShots={() => setDetail(null)}
+        />
+      );
+    }
+    if (detail?.kind === 'shot') {
+      return (
+        <ShotDetail
+          key={`${detail.id}-${detail.tab ?? ''}`}
+          shotId={detail.id}
+          direction={direction}
+          statusDisplay={statusDisplay}
+          initialTab={detail.tab}
+          onBack={() => setDetail(null)}
+          onNavigate={openShot}
+          onOpenNote={(id) => setDetail({ kind: 'note', id })}
+        />
+      );
+    }
+    const controls =
+      shotsView === 'thumb' ? (
+        <ThumbSizeSlider size={thumbSize} onSize={setThumbSize} />
+      ) : shotsView === 'card' ? (
+        <CardColumnsPicker
+          columns={cardColumns}
+          onStep={(delta) =>
+            setCardColumns((current) => clampColumns(current + delta))
+          }
+        />
+      ) : shotsView === 'gantt' ? (
+        <GanttZoomSlider zoom={shotsZoom} onZoom={setShotsZoom} />
+      ) : null;
+    return (
+      <>
+        <PageHeader
+          title="Shots"
+          summary="11 shots in 3 sequences"
+          searchLabel="Search shots"
+          addLabel="Shot"
+          views={viewsFor('Shot', PROJECT_ID)}
+          view={shotsView}
+          onView={setShotsView}
+          controls={controls}
+        />
+        {shotsView === 'table' && (
+          <ShotGridSpecimen
+            direction={direction}
+            statusDisplay={statusDisplay}
+            shotsPage={shotsPage}
+            onOpenShot={openShot}
+            onColumnContextMenu={(event, field) =>
+              setMenu({ x: event.clientX, y: event.clientY, field: field.code, label: field.label })
+            }
+          />
+        )}
+        {shotsView === 'card' && (
+          <ShotCardsView
+            direction={direction}
+            statusDisplay={statusDisplay}
+            columns={cardColumns}
+            onOpenShot={openShot}
+            shotsPage={shotsPage}
+          />
+        )}
+        {shotsView === 'thumb' && (
+          <ShotThumbsView
+            direction={direction}
+            statusDisplay={statusDisplay}
+            size={thumbSize}
+            onOpenShot={openShot}
+            shotsPage={shotsPage}
+          />
+        )}
+        {shotsView === 'gantt' && (
+          <>
+            <GanttScope text="This gantt shows the Tasks of these shots, grouped by Shot, then Step. Bars run from each task's Start to Due." />
+            <TasksGantt
+              direction={direction}
+              statusDisplay={statusDisplay}
+              zoom={shotsZoom}
+              taskList={allTasks.filter((t) => t.entityType === 'Shot' && shotsPage.allShots.some((s) => s.id === t.entityId))}
+              grouping="shot"
+            />
+          </>
+        )}
+      </>
+    );
+  };
+
+  const tasksContent = () => {
+    const topLevel = tasksPage.projectTasks.filter((t) => !t.parentTaskId).length;
+    const subTasks = tasksPage.projectTasks.length - topLevel;
+    return (
+      <>
+        <PageHeader
+          title="Tasks"
+          summary={`${topLevel} tasks and ${subTasks} sub-tasks by department and step`}
+          searchLabel="Search tasks"
+          addLabel="Task"
+          views={viewsFor('Task', PROJECT_ID)}
+          view={tasksView}
+          onView={setTasksView}
+          controls={
+            tasksView === 'gantt' ? (
+              <GanttZoomSlider zoom={tasksZoom} onZoom={setTasksZoom} />
+            ) : tasksView === 'card' ? (
+              <CardColumnsPicker columns={cardColumns} onStep={(delta) => setCardColumns((c) => clampColumns(c + delta))} />
+            ) : tasksView === 'thumb' ? (
+              <ThumbSizeSlider size={thumbSize} onSize={setThumbSize} />
+            ) : null
+          }
+        />
+        {tasksView === 'table' && <TasksTable direction={direction} statusDisplay={statusDisplay} />}
+        {tasksView === 'gantt' && (
+          <>
+            <GanttScope text="Tasks grouped by Department, then Step. Bars run from each task's Start to Due." />
+            <TasksGantt direction={direction} statusDisplay={statusDisplay} zoom={tasksZoom} />
+          </>
+        )}
+        {tasksView === 'card' && (
+          <RecordCards spec={taskSpec(tasksPage.projectTasks, { direction, statusDisplay }, { showLink: true })} columns={cardColumns} />
+        )}
+        {tasksView === 'thumb' && (
+          <RecordThumbs spec={taskSpec(tasksPage.projectTasks, { direction, statusDisplay }, { showLink: true })} size={thumbSize} />
+        )}
+      </>
+    );
+  };
 
   return (
     <div
@@ -204,6 +334,8 @@ export function Specimen({
       <TopBar />
       <div className="relative flex" style={{ height }}>
         <NavTreeSpecimen
+          activePageId={activePageId}
+          onOpenPage={openPage}
           mode={navMode}
           overlayOpen={navOpen}
           onToggleDock={() => {
@@ -213,37 +345,11 @@ export function Specimen({
           onToggleOverlay={() => setNavOpen(!navOpen)}
         />
         <main className="flex min-w-0 flex-1 flex-col" onMouseDown={() => navMode === 'undocked' && setNavOpen(false)}>
-          <PageHeader
-            view={view}
-            onView={setView}
-            thumbSize={thumbSize}
-            onThumbSize={setThumbSize}
-            cardColumns={cardColumns}
-            onCardColumns={(delta) =>
-              setCardColumns((current) => Math.min(CARD_COLUMNS.max, Math.max(CARD_COLUMNS.min, current + delta)))
-            }
-          />
-          {view === 'table' && (
-            <ShotGridSpecimen
-              direction={direction}
-              statusDisplay={statusDisplay}
-              shotsPage={shotsPage}
-              onColumnContextMenu={(event, field) =>
-                setMenu({ x: event.clientX, y: event.clientY, field: field.code, label: field.label })
-              }
-            />
-          )}
-          {view === 'card' && (
-            <ShotCardsView
-              direction={direction}
-              statusDisplay={statusDisplay}
-              columns={cardColumns}
-              shotsPage={shotsPage}
-            />
-          )}
-          {view === 'thumb' && (
-            <ShotThumbsView direction={direction} statusDisplay={statusDisplay} size={thumbSize} shotsPage={shotsPage} />
-          )}
+          {detail?.kind === 'issue' || page === 'shots'
+            ? shotsContent()
+            : page === 'tasks'
+              ? tasksContent()
+              : <DashboardPage />}
         </main>
       </div>
       {showComponents && <ComponentStrip direction={direction} />}

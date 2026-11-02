@@ -4,10 +4,11 @@ import { placeholderThumb } from './color';
 import type { Direction } from './directions';
 import { Icon } from './Icon';
 import { ShotCell, SummaryValue } from './ShotGridSpecimen';
+import { HeaderSelectBox, RowTypeIcon, useRowSelection } from './selection';
 import { StatusPill } from './StatusPill';
 import { getShotsPage, SELECTED_SHOT_ID, summariesFor, type ShotsPage } from './shotsPage';
 
-function TotalsBar({ shotsPage }: { shotsPage: ShotsPage }) {
+function TotalsBar({ shotsPage, selection }: { shotsPage: ShotsPage; selection: ReturnType<typeof useRowSelection> }) {
   const summaries = summariesFor(shotsPage, shotsPage.allShots);
   return (
     <div
@@ -15,6 +16,9 @@ function TotalsBar({ shotsPage }: { shotsPage: ShotsPage }) {
       style={{ height: 'var(--sgp-row-compact)' }}
       aria-label="Totals"
     >
+      <span className="flex w-5 justify-center">
+        <HeaderSelectBox state={selection.header} onClick={selection.onHeaderClick} count={selection.count} />
+      </span>
       <span className="font-semibold">Total</span>
       <span className="text-xs text-fg-subtle">{shotsPage.allShots.length} shots on all pages</span>
       {summaries.map((s) => (
@@ -23,6 +27,7 @@ function TotalsBar({ shotsPage }: { shotsPage: ShotsPage }) {
           <SummaryValue kind={s.kind} value={s.value} />
         </span>
       ))}
+      {selection.count > 0 && <span className="ml-auto text-xs text-fg-muted">{selection.count} selected</span>}
     </div>
   );
 }
@@ -79,12 +84,14 @@ export function ShotCardsView({
   direction,
   statusDisplay,
   columns,
+  onOpenShot,
   shotsPage = getShotsPage(),
 }: {
   direction: Direction;
   statusDisplay: StatusDisplay;
   /** Cards per row, 1-10. */
   columns: number;
+  onOpenShot?: (shotId: string) => void;
   shotsPage?: ShotsPage;
 }) {
   const { groups, page, fieldByCode } = shotsPage;
@@ -95,10 +102,11 @@ export function ShotCardsView({
   const [openCards, toggleCard] = useToggleSet(
     groups.filter((g) => g.seq.code !== 'LMP_030').flatMap((g) => g.rows.map((r) => r.id)),
   );
+  const selection = useRowSelection(shotsPage.allShots.map((s) => s.id), [SELECTED_SHOT_ID]);
 
   return (
     <div className="min-w-0 flex-1 overflow-auto bg-surface">
-      <TotalsBar shotsPage={shotsPage} />
+      <TotalsBar shotsPage={shotsPage} selection={selection} />
       <div className="flex flex-col gap-3 p-3">
         {groups.map(({ seq, rows }) => (
           <section key={seq.id} className="flex flex-col gap-2">
@@ -113,11 +121,14 @@ export function ShotCardsView({
               <div className="grid items-start gap-3" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
                 {rows.map((shot) => {
                   const open = openCards.has(shot.id);
-                  const selected = shot.id === SELECTED_SHOT_ID;
+                  const selected = selection.isSelected(shot.id);
                   return (
                     <article
                       key={shot.id}
-                      className={`@container flex min-w-0 flex-col gap-2 overflow-hidden rounded-lg border bg-surface-raised p-2 ${
+                      aria-selected={selected}
+                      onClick={(event) => selection.onRowClick(shot.id, event)}
+                      onMouseDown={selection.onRowMouseDown}
+                      className={`@container flex min-w-0 cursor-default flex-col gap-2 overflow-hidden rounded-lg border bg-surface-raised p-2 ${
                         selected ? 'border-accent bg-row-selected' : 'border-line hover:border-line-strong'
                       }`}
                     >
@@ -134,7 +145,15 @@ export function ShotCardsView({
                           className="hidden h-9 w-16 shrink-0 rounded-sm @[15rem]:block"
                           style={{ background: placeholderThumb(shot.code) }}
                         />
-                        <span className="min-w-0 truncate font-medium text-accent">{shot.code}</span>
+                        <span className="flex w-4 shrink-0 justify-center">
+                          <RowTypeIcon icon="film" selected={selected} label={`Shot ${shot.code}`} />
+                        </span>
+                        <button
+                          className="min-w-0 truncate font-medium text-accent hover:underline"
+                          onClick={() => onOpenShot?.(shot.id)}
+                        >
+                          {shot.code}
+                        </button>
                         <span className="ml-auto hidden shrink-0 @[15rem]:inline-flex">
                           <StatusPill code={shot.status} pillStyle={direction.pillStyle} display={statusDisplay} />
                         </span>
@@ -173,20 +192,23 @@ export function ShotThumbsView({
   direction,
   statusDisplay,
   size,
+  onOpenShot,
   shotsPage = getShotsPage(),
 }: {
   direction: Direction;
   statusDisplay: StatusDisplay;
   /** Thumbnail width in pixels. */
   size: number;
+  onOpenShot?: (shotId: string) => void;
   shotsPage?: ShotsPage;
 }) {
   const { groups } = shotsPage;
   const [openGroups, toggleGroup] = useToggleSet(groups.map((g) => g.seq.id));
+  const selection = useRowSelection(shotsPage.allShots.map((s) => s.id), [SELECTED_SHOT_ID]);
 
   return (
     <div className="min-w-0 flex-1 overflow-auto bg-surface">
-      <TotalsBar shotsPage={shotsPage} />
+      <TotalsBar shotsPage={shotsPage} selection={selection} />
       <div className="flex flex-col gap-3 p-3">
         {groups.map(({ seq, rows }) => (
           <section key={seq.id} className="flex flex-col gap-2">
@@ -200,11 +222,19 @@ export function ShotThumbsView({
             {openGroups.has(seq.id) && (
               <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(auto-fill, ${size}px)` }}>
                 {rows.map((shot) => {
-                  const selected = shot.id === SELECTED_SHOT_ID;
+                  const selected = selection.isSelected(shot.id);
                   return (
-                    <figure key={shot.id} className="group flex flex-col gap-1.5">
+                    <figure
+                      key={shot.id}
+                      aria-selected={selected}
+                      onClick={(event) => selection.onRowClick(shot.id, event)}
+                      onMouseDown={selection.onRowMouseDown}
+                      className="group flex cursor-default flex-col gap-1.5"
+                    >
                       <div
-                        className={`relative aspect-video rounded-md ring-2 ${
+                        title="Click to select, double-click to open"
+                        onDoubleClick={() => onOpenShot?.(shot.id)}
+                        className={`relative aspect-video cursor-pointer rounded-md ring-2 ${
                           selected ? 'ring-accent' : 'ring-transparent group-hover:ring-line-strong'
                         }`}
                         style={{ background: placeholderThumb(shot.code) }}
@@ -214,7 +244,12 @@ export function ShotThumbsView({
                         </span>
                       </div>
                       <figcaption className="flex min-w-0 items-center gap-2 overflow-hidden px-0.5 text-sm">
-                        <span className="truncate font-medium text-accent">{shot.code}</span>
+                        <span className="flex w-4 shrink-0 justify-center">
+                          <RowTypeIcon icon="film" selected={selected} label={`Shot ${shot.code}`} />
+                        </span>
+                        <button className="truncate font-medium text-accent hover:underline" onClick={() => onOpenShot?.(shot.id)}>
+                          {shot.code}
+                        </button>
                         <span className="ml-auto shrink-0">
                           <StatusPill code={shot.status} pillStyle={direction.pillStyle} display={statusDisplay} />
                         </span>

@@ -3,6 +3,7 @@ import type { MouseEvent } from 'react';
 import { placeholderThumb } from './color';
 import type { Direction } from './directions';
 import { Icon } from './Icon';
+import { HeaderSelectBox, RowTypeIcon, useRowSelection } from './selection';
 import { StatusPill } from './StatusPill';
 import {
   assetNames,
@@ -32,15 +33,23 @@ export function ShotCell({
   shot,
   direction,
   statusDisplay,
+  onOpenShot,
 }: {
   field: EffectiveField;
   shot: Shot;
   direction: Direction;
   statusDisplay: StatusDisplay;
+  onOpenShot?: (shotId: string) => void;
 }) {
   switch (field.code) {
     case 'code':
-      return <span className="font-medium text-accent">{shot.code}</span>;
+      return onOpenShot ? (
+        <button className="font-medium text-accent hover:underline" onClick={() => onOpenShot(shot.id)}>
+          {shot.code}
+        </button>
+      ) : (
+        <span className="font-medium text-accent">{shot.code}</span>
+      );
     case 'status':
       return <StatusPill code={shot.status} pillStyle={direction.pillStyle} display={statusDisplay} />;
     case 'frameIn':
@@ -73,11 +82,13 @@ export function ShotGridSpecimen({
   direction,
   statusDisplay: statusDisplayOverride,
   onColumnContextMenu,
+  onOpenShot,
   shotsPage = getShotsPage(),
 }: {
   direction: Direction;
   statusDisplay?: StatusDisplay;
   onColumnContextMenu?: (event: MouseEvent, field: EffectiveField) => void;
+  onOpenShot?: (shotId: string) => void;
   shotsPage?: ShotsPage;
 }) {
   const { columns, settings, groups, allShots } = shotsPage;
@@ -105,6 +116,7 @@ export function ShotGridSpecimen({
     });
   };
 
+  const selection = useRowSelection(allShots.map((s) => s.id), [SELECTED_SHOT_ID]);
   let rowIndex = 0;
 
   return (
@@ -116,7 +128,7 @@ export function ShotGridSpecimen({
           role="row"
         >
           <span className={`flex h-full items-center justify-center ${cellLine}`}>
-            <input type="checkbox" aria-label="Select all" className="accent-[var(--sgp-color-accent)]" />
+            <HeaderSelectBox state={selection.header} onClick={selection.onHeaderClick} count={selection.count} />
           </span>
           <span className={`flex h-full items-center px-2 ${cellLine}`} />
           {columns.map((col) => (
@@ -167,24 +179,22 @@ export function ShotGridSpecimen({
               {summaryCells(rows)}
             </div>
             {rows.map((shot) => {
-              const selected = shot.id === SELECTED_SHOT_ID;
+              const selected = selection.isSelected(shot.id);
               const zebra = direction.zebra && rowIndex++ % 2 === 1;
               return (
                 <div
                   key={shot.id}
                   role="row"
-                  className={`grid items-center border-b border-line text-md ${
+                  aria-selected={selected}
+                  onClick={(event) => selection.onRowClick(shot.id, event)}
+                  onMouseDown={selection.onRowMouseDown}
+                  className={`grid cursor-default items-center border-b border-line text-md ${
                     selected ? 'bg-row-selected' : zebra ? 'bg-row-alt hover:bg-row-hover' : 'hover:bg-row-hover'
                   }`}
                   style={{ gridTemplateColumns: template, ...rowHeight }}
                 >
                   <span className={`flex h-full items-center justify-center ${cellLine}`}>
-                    <input
-                      type="checkbox"
-                      defaultChecked={selected}
-                      aria-label={`Select ${shot.code}`}
-                      className="accent-[var(--sgp-color-accent)]"
-                    />
+                    <RowTypeIcon icon="film" selected={selected} label={`Shot ${shot.code}`} />
                   </span>
                   <span className={`flex h-full items-center px-1.5 ${cellLine}`}>
                     <span className="h-5 w-9 rounded-sm" style={{ background: placeholderThumb(shot.code) }} />
@@ -195,7 +205,13 @@ export function ShotGridSpecimen({
                       className={`flex h-full min-w-0 items-center px-2 ${cellLine} ${align(col.code)}`}
                       role="cell"
                     >
-                      <ShotCell field={col} shot={shot} direction={direction} statusDisplay={statusDisplay} />
+                      <ShotCell
+                        field={col}
+                        shot={shot}
+                        direction={direction}
+                        statusDisplay={statusDisplay}
+                        onOpenShot={onOpenShot}
+                      />
                     </span>
                   ))}
                 </div>

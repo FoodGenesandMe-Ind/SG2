@@ -26,6 +26,9 @@
   --sgp-color-nav: #161718;
   --sgp-color-nav-active: #1b2c42;
 
+  /* Icons and labels drawn on top of thumbnails and video, in every theme */
+  --sgp-color-on-media: #ffffff;
+
   /* Data rows */
   --sgp-color-row-alt: #1d1e20;
   --sgp-color-row-hover: #25272a;

@@ -1,11 +1,19 @@
 import { buildNavTree, type EffectiveTable, type NavLevel, type Page } from '@sgp/mock-data';
-import type { ReactNode } from 'react';
+import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Icon } from './Icon';
 import { VIEW_ICON } from './shotsPage';
 
-const ACTIVE_PAGE_ID = 'pg-lmp-shots';
-
 export type NavMode = 'docked' | 'undocked';
+
+interface NavContext {
+  activePageId: string;
+  onOpenPage?: (pageId: string) => void;
+}
+
+const NavCtx = createContext<NavContext>({ activePageId: '' });
+
+/** Survives docking and undocking, so the tree reopens exactly where it was. */
+let savedScrollTop = 0;
 
 function pageIcon(page: Page) {
   return page.type === 'dashboard' ? 'layout-dashboard' : VIEW_ICON[page.view];
@@ -20,6 +28,7 @@ function Row({
   expanded,
   count,
   strong,
+  onClick,
 }: {
   depth: number;
   icon?: string;
@@ -29,10 +38,15 @@ function Row({
   expanded?: boolean;
   count?: number;
   strong?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-sm pr-2 text-sm hover:bg-row-hover ${
+      role={onClick ? 'link' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded-sm pr-2 text-sm hover:bg-row-hover ${onClick ? 'cursor-pointer' : ''} ${
         active ? 'bg-nav-active font-medium text-fg' : strong ? 'font-semibold text-fg' : 'text-fg-muted'
       }`}
       style={{ height: 'var(--sgp-row-compact)', paddingLeft: `${0.25 + depth * 0.875}rem` }}
@@ -52,8 +66,16 @@ function TableRows({ tables, depth }: { tables: EffectiveTable[]; depth: number 
 }
 
 function PageRows({ pages, depth }: { pages: Page[]; depth: number }) {
+  const { activePageId, onOpenPage } = useContext(NavCtx);
   return pages.map((page) => (
-    <Row key={page.id} depth={depth} icon={pageIcon(page)} label={page.name} active={page.id === ACTIVE_PAGE_ID} />
+    <Row
+      key={page.id}
+      depth={depth}
+      icon={pageIcon(page)}
+      label={page.name}
+      active={page.id === activePageId}
+      onClick={onOpenPage ? () => onOpenPage(page.id) : undefined}
+    />
   ));
 }
 
@@ -117,10 +139,18 @@ function NavHeader({ mode, onToggleDock }: { mode: NavMode; onToggleDock: () => 
 
 function NavPanel({ mode, onToggleDock, viewerId }: { mode: NavMode; onToggleDock: () => void; viewerId: string }) {
   const nav = buildNavTree(viewerId);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = savedScrollTop;
+  }, []);
   return (
     <>
       <NavHeader mode={mode} onToggleDock={onToggleDock} />
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto p-2"
+        onScroll={(event) => (savedScrollTop = event.currentTarget.scrollTop)}
+      >
         <div className="flex flex-col gap-0.5">
           <LevelItems level={nav.company} depth={0} />
           <span className="mt-3 px-1 pb-1 text-xs font-semibold uppercase tracking-wide text-fg-subtle">Projects</span>
@@ -141,18 +171,26 @@ function NavPanel({ mode, onToggleDock, viewerId }: { mode: NavMode; onToggleDoc
  * Undocked: a slim rail; opening it floats the panel over the content until it is dismissed or docked again.
  */
 export function NavTreeSpecimen({
-  mode,
-  overlayOpen,
-  onToggleDock,
-  onToggleOverlay,
-  viewerId = 'p01',
-}: {
+  activePageId,
+  onOpenPage,
+  ...props
+}: NavBodyProps & NavContext) {
+  return (
+    <NavCtx.Provider value={{ activePageId, onOpenPage }}>
+      <NavBody {...props} />
+    </NavCtx.Provider>
+  );
+}
+
+interface NavBodyProps {
   mode: NavMode;
   overlayOpen: boolean;
   onToggleDock: () => void;
   onToggleOverlay: () => void;
   viewerId?: string;
-}) {
+}
+
+function NavBody({ mode, overlayOpen, onToggleDock, onToggleOverlay, viewerId = 'p01' }: NavBodyProps) {
   if (mode === 'docked') {
     return (
       <nav aria-label="Navigation" className="flex w-64 shrink-0 flex-col border-r border-line bg-nav">
@@ -175,9 +213,6 @@ export function NavTreeSpecimen({
         >
           <Icon name="panel-left-open" size={15} />
         </button>
-        <span className="mt-1 flex size-7 items-center justify-center text-accent" title="The Last Lamplighter > Shots">
-          <Icon name="table" size={15} />
-        </span>
       </div>
       {overlayOpen && (
         <nav

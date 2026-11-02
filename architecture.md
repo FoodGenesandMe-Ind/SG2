@@ -183,7 +183,26 @@ A metadata catalog describes each company's world:
 - **Table** — code, display name, scope (company or project), system or custom, icon.
 - **Field** — typed: text, number, currency, percent, date, duration, checkbox, list (dropdown), status, entity link, multi-entity link, user, media, file/publish, URL, color, calculated, and summary (roll-up across linked records).
 - **Link** — relationships between tables, including many-to-many, with the reverse side visible from both tables.
-- **Status values, pipeline steps, templates, template versions, pages, folders, permission sets** — also rows in the catalog, not code.
+- **Status values, departments, pipeline steps, templates, template versions, pages, folders, permission sets** — also rows in the catalog, not code.
+- **Pipeline organization:** a pipeline is a series of tasks organized by pipeline step, with an optional second layer of departments (for example Shot Finaling holding Lighting, FX, and Comp, while Animation holds only Animation). Tasks can have sub-tasks, each assignable to its own person; both can carry a freeform to-do checklist, summarized on the task as open items.
+- **Task dependencies** are records of their own: predecessor, successor, and type. FS (finish-to-start), SS (start-to-start), FF (finish-to-finish), and SF (start-to-finish), drawn as labeled arrows in the gantt and listed in a "Depends on" column. Scheduling can later use them to warn about, or ripple, date changes.
+
+### 4.2.1 Table types
+
+Every table has a type, set by traits that can differ per template and project (see Expectations_Fundamentals.md, item 15). The type decides which designs, views, and groupings apply.
+
+| Type | Traits | Examples | What it unlocks |
+| --- | --- | --- | --- |
+| Tasks | built in (sub-tasks are tasks with a Parent task) | Tasks | Gantt, dependencies, to-do lists |
+| Has tasks | `has_tasks` | Shots, Assets | Gantt of the records' tasks; Tasks tab on detail pages |
+| Has tasks and steps | `has_tasks`, `has_steps` | Shots, Assets in most animation projects | Pipeline strip on detail pages; grouping by step |
+| Has tasks, steps, and departments | `has_tasks`, `has_steps`, `has_departments` | Shots, Assets in larger productions | Grouping by department, then step |
+| Threaded | `displayClass: threaded` | Notes, Issues | Email-style thread with side pane instead of the record detail standard |
+| Standard | none | People, Bids, Reels | Table, Cards, Thumbnails, record detail page |
+
+Traits live on the table definition and in configuration layers, so a template can turn `has_tasks` on for Shots while another (for example, a live-action teaser that tracks status only) leaves it off.
+
+**Every table has system fields**, maintained by the platform: ID, Date created, Created by, Date updated, Updated by. A record's info tab shows all fields, including system fields and, on request, fields hidden in the current project.
 
 ### 4.3 Real tables, not a key-value blob
 
@@ -377,21 +396,36 @@ Decided: clients can archive a project to cut storage cost.
 
 Every page is a stored record: a page type, a query, and view settings.
 
-- **Table page** — data-dense grid on exactly one table. Columns, sort, grouping, filters, inline editing, conditional formatting. Each column has saved settings, changed from the column header's right-click menu, for example:
+- **Table page** — data-dense grid on exactly one table. Columns, sort, grouping, filters, inline editing, conditional formatting.
+  - **Record-type icon and selection (decided), in every view:** each row starts with its table's icon (a shot, a task, a note), so it is always clear what kind of record you are looking at. In Gantt view the icon starts each task row; in Cards and Thumbnails it sits just left of the linked name, and the header box moves to the bar above the cards. Clicking a row (anywhere that isn't itself a link) selects it and the icon becomes a ticked box; Shift+click selects a range and Cmd/Ctrl+click adds or removes a row. Once anything is selected a tick box appears in the header: faded when some rows are selected, solid when all are. Clicking it selects all, or clears when all are selected. Double-click opens a record.
+  - Each column has saved settings, changed from the column header's right-click menu, for example:
   - **Summaries** (sum, average, min, max, count) shown in every group row and in a **Total row at the top**, directly under the column headers. Production data usually spans many pages, so totals for the whole result always appear on the first page, never only at the end. For example, Total Frames (a calculated field: Cut out minus Cut in, plus 1) summed per sequence and in total.
   - **Status display:** long name, short name, or icon only (full name on hover). Long and short names always carry the status's own icon. Short names are a client-defined property of each status value.
-- **Three views of every table page** — Table, Cards, and Thumbnails, switched from the page header. Flipping is a view setting on the same page and query, not a separate page.
+- **Views of every table page** — Table, Cards, and Thumbnails always, plus **Gantt** on pages whose records carry tasks (Tasks, Shots, Assets). Switched from the page header. Flipping is a view setting on the same page and query, not a separate page.
+  - **Every gantt is a gantt of tasks (decided).** A Shots page in Gantt view is really a page of those shots' Tasks, grouped by Shot, then Step; the Tasks page groups by Department, then Step. A strip above the chart says so. Bars run from each task's Start to Due, use status colors, group rows show summary bars, and a Today line marks the current date. A time scale slider runs from Days through Weeks, Months, and Quarters to Years, and the two-tier headings change with it.
+  - **Bar labels:** bars carry no text by default. Right-clicking the timeline opens a menu to show a field to the left and/or right of the bars (task, assignee, status, dates, bid).
+  - **Dependencies** are drawn as lines between bars (no type labels; hover for the type). **SGPipeline never changes task dates automatically (decided).** A dependency that isn't met is drawn red with a "!" at the arrowhead and on the task's row, with an explanation on hover. Schedulers decide what to do; sometimes a violation is deliberate.
   - **Cards:** collapsible cards; settings choose which fields show in the collapsed title and which show when expanded, and how many cards per row (1 to 10, default 4). Collapse controls sit on the left.
   - **Thumbnails:** a wall of thumbnails with caption fields from the page's settings and a size slider next to the page search.
   - View settings (columns, thumbnail size, status display, summaries) are saved with the page.
   - Totals and group summaries appear in every view, at the top.
-- **Dashboard page** — a grid with a configured number of rows and columns. Each cell holds a widget from the widget library: pie chart, bar chart, histogram, heat map, number tile, table snippet, progress summary, and more over time. Each widget has its own query.
-- **Specialized pages** — tools that are more than a query: entity detail, script room, world bible, review player. They still sit in the same navigation tree and respect the same scope rules.
+- **Dashboard page** — a grid with a configured number of rows and columns. Each cell holds a widget from the widget library, each with its own query. Chart types demonstrated so far: pie, donut, vertical bar, horizontal bar, stacked bar, line, area, heat map, and line plus column combo; number tiles, table snippets, and progress summaries to follow.
+- **Detail pages** — clicking any record opens its detail page, starting from the pattern Flow uses today: a large thumbnail beside key fields, a pipeline strip of step statuses, actions (play latest, open in the DCC, follow), previous and next record, then tabs.
+  - **Tabs are pages.** Each tab is a page tucked inside the detail page, filtered to this record, with the same toolbar and views as any page (Table, Cards, Thumbnails, and Gantt when its table has dates), search, view controls, and a "+" button. The only exception is the record's own info tab, which is a field form.
+  - **Shot tabs:** Activity (the Event table for this shot and everything linked to it; there is no separate History tab), Shot info, Tasks, Versions, Notes, Publishes, Assets. Tabs are configurable per table and template.
+  - **Adding notes** happens on the Notes tab with "+ Note", which opens a note form (To, Cc, Regarding, labels, body, attachments, markup). Activity has no composer.
+- **Threaded tables (decided).** Some tables are conversations rather than records: Notes and Issues ship as threaded tables, and clients can mark their own. Their detail pages use a different standard from the record standard used for Shots, modeled on Gmail and Zendesk:
+  - one thread, no tabs, filling the width beside the side pane; each message has a collapse arrow at its left and collapses individually (as in Gmail), or all at once with an icon or Cmd+click; a collapsed message shows a paperclip with the number of attachments, and an expanded one lists them;
+  - a toggle for oldest first or newest first; the reply box sits at the end of the thread in that order;
+  - non-reply events appear inline in the thread: reads ("Hana read this note"), status changes ("Nephi changed the status from Open to Closed"), assignments;
+  - public replies and internal notes (tinted, staff only);
+  - every piece of metadata (status, type, people, regarding, labels or tags, attachments, dates) lives in a side pane.
+- **Specialized pages** — tools that are more than a query: script room, world bible, review player. They still sit in the same navigation tree and respect the same scope rules.
 
 ### 5.2 Left navigation tree
 
 - The tree follows the hierarchy: Company-level items sit directly at the top (there is no "Company" grouper), followed by a Projects section with each project the user can access.
-- **Docked or undocked.** Docked, the navigation is part of the layout. Undocked, it collapses to a slim rail so pages get the full width; the rail button floats the navigation over the page until the user clicks away or pins it back.
+- **Docked or undocked.** Docked, the navigation is part of the layout. Undocked, it collapses to a slim rail with a single button so pages get the full width; the button floats the navigation over the page until the user clicks away or pins it back. The choice persists per user across pages and sessions, and the tree keeps its scroll position.
 - Under each level: system and custom tables, Saved Pages, and folders. Tables appear directly in the tree (there is no "Tables" grouper); clients can file tables into folders just like pages.
 - Every level has a **Personal** folder (the signed-in user's personal pages at that level). The Company level also has a **Multi-project pages** folder.
 - Clients can create as many Saved Pages and folders as they like.
@@ -560,6 +594,8 @@ Specialized tools, which sit inside the same shell:
 
 A producer dashboard is no longer a bespoke screen. It is a Dashboard page built from widgets, which also proves the platform.
 
+**Themes (from the fundamentals).** SGPipeline ships several themes (today: Studio neutral, Classic, Bold), each with a light and dark variant. Every user switches theme and light or dark at will; artists tend toward dark, management toward light. Shipped themes never change. Companies can add their own with a **theme designer**, starting from a copy of a shipped theme or from a blank slate, picking each color. Because every component reads design tokens, a company theme is simply a new token set. Still to design.
+
 ### 11.4 Mock data
 
 `@sgp/mock-data` models one company with:
@@ -672,4 +708,9 @@ Record decisions here as they are made: date, decision, reasoning, and who decid
 | 2026-10-31 | Events kept indefinitely and counted in the storage footprint; clients can download events to save money; projects can be archived to cheaper storage with all their data | Full history by default, with clear ways for clients to control cost | Nephi |
 | 2026-10-31 | No formula syntax for users: visual builders for calculated fields, summaries, and conditional formatting, stored as structured expression trees | Producers and artists should never have to learn a syntax | Nephi |
 | 2026-10-31 | Charts: start with ECharts, themed from tokens and wrapped behind our own widget components, ready to be replaced by our own charts | Every UI element must look and feel harmonized | Nephi |
+| 2026-11-01 | Every gantt is a gantt of tasks; Gantt is offered only on pages whose records carry tasks (Tasks, Shots, Assets) | Replaces the earlier idea of a gantt on any table with dates | Nephi |
+| 2026-11-01 | Task dates are never changed automatically; unmet dependencies are flagged (red line and "!") for schedulers to resolve | Real schedules sometimes violate dependencies on purpose | Nephi |
+| 2026-11-01 | Threaded tables (Notes, Issues) use an email-style detail standard with a side pane instead of tabs | Conversations read better as threads; metadata belongs beside them | Nephi |
+| 2026-11-01 | Rows show a record-type icon that becomes a tick box when selected; click, Shift+click, Cmd+click selection | Always clear what kind of record each row is; standard selection behavior | Nephi |
+| 2026-11-01 | Table types set by traits (has_tasks, has_steps, has_departments, threaded), configurable per template and project, decide which designs apply | Designs follow what a table is, not its name | Nephi |
 | 2026-11-01 | Calculated fields must support constants and nested arithmetic (for example Total Frames = Cut out - Cut in + 1) | Production math needs inclusive ranges, handles, and offsets, not only field-to-field operations | Nephi |

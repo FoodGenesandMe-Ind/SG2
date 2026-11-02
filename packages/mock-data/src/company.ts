@@ -85,7 +85,9 @@ export const statusValues: StatusValue[] = [
  * changes it accepted (then permissions).
  */
 export const fieldConfigLayers: FieldConfigLayer[] = [
-  // 3D Animation template
+  // 3D Animation template: Shots and Assets carry tasks, organized by step and department
+  { id: 'cfg-3d-shot-traits', layer: 'template', targetId: 'tpl-3d', version: 1, table: 'Shot', traits: { hasTasks: true, hasSteps: true, hasDepartments: true } },
+  { id: 'cfg-3d-asset-traits', layer: 'template', targetId: 'tpl-3d', version: 1, table: 'Asset', traits: { hasTasks: true, hasSteps: true, hasDepartments: true } },
   {
     id: 'cfg-3d-shot-status-v1',
     layer: 'template',
@@ -108,7 +110,7 @@ export const fieldConfigLayers: FieldConfigLayer[] = [
   },
   { id: 'cfg-3d-sequence-synopsis-v2', layer: 'template', targetId: 'tpl-3d', version: 2, table: 'Sequence', field: 'description', label: 'Synopsis' },
   { id: 'cfg-3d-delivery-due-v2', layer: 'template', targetId: 'tpl-3d', version: 2, table: 'Shot', field: 'dueDate', label: 'Delivery due' },
-  // Live action / VFX template
+  // Live action / VFX template: shots without tasks (the teaser tracks status only)
   {
     id: 'cfg-live-shot-status',
     layer: 'template',
