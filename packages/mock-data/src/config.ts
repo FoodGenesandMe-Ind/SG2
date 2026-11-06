@@ -1,5 +1,6 @@
-import { changeDecisions, fieldConfigLayers, templates } from './company';
+import { changeDecisions, fieldConfigLayers, permissionSets, templates } from './company';
 import { folders, pages, tablePlacements } from './pages';
+import { people } from './people';
 import { projects } from './project';
 import { tables } from './schema';
 import type {
@@ -233,7 +234,8 @@ export interface NavTree {
   projects: NavLevel[];
 }
 
-export function buildNavTree(viewerId: string): NavTree {
+/** Pages saved during this session (not yet in the mock data) are passed as extraPages. */
+export function buildNavTree(viewerId: string, extraPages: Page[] = []): NavTree {
   const visibleProjects = projects.filter((p) => !p.isTemplate && !p.archivedAt && p.memberIds.includes(viewerId));
 
   const levelFor = (scope: PageScope, label: string): NavLevel => {
@@ -264,7 +266,7 @@ export function buildNavTree(viewerId: string): NavTree {
   const projectLevels = visibleProjects.map((p) => levelFor({ level: 'project', projectId: p.id }, p.name));
   const levels = [company, ...projectLevels];
 
-  for (const page of pages) {
+  for (const page of [...pages, ...extraPages]) {
     if (!page.shared && page.ownerId !== viewerId) continue;
     const scope = resolvePageScope(page);
     const level = levels.find((l) => sameScope(l.scope, scope));
@@ -281,4 +283,31 @@ export function buildNavTree(viewerId: string): NavTree {
   }
 
   return { company, projects: projectLevels };
+}
+
+// ---------------------------------------------------------------------------
+// Permissions
+// ---------------------------------------------------------------------------
+
+export interface EffectivePermissions {
+  setNames: string[];
+  canApprove: boolean;
+  seesFinancials: boolean;
+  managesSchema: boolean;
+  createsSharedPages: boolean;
+  readOnly: boolean;
+}
+
+/** A person's permission sets combined: any set that grants a capability grants it; read-only only if every set is. */
+export function permissionsFor(personId: string): EffectivePermissions {
+  const ids = people.find((p) => p.id === personId)?.permissionSetIds ?? [];
+  const sets = permissionSets.filter((s) => ids.includes(s.id));
+  return {
+    setNames: sets.map((s) => s.name),
+    canApprove: sets.some((s) => s.canApprove),
+    seesFinancials: sets.some((s) => s.seesFinancials),
+    managesSchema: sets.some((s) => s.managesSchema),
+    createsSharedPages: sets.some((s) => s.createsSharedPages),
+    readOnly: sets.length > 0 && sets.every((s) => s.readOnly),
+  };
 }

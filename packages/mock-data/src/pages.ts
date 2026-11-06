@@ -1,4 +1,4 @@
-import type { Folder, Page, TablePlacement } from './types';
+import type { ConditionalFormat, Folder, Page, TablePlacement } from './types';
 
 const LMP = 'prj01';
 const TSR = 'prj02';
@@ -148,7 +148,7 @@ export const pages: Page[] = [
       table: 'Shot',
       filters: [{ field: 'projectId', op: 'is', value: LMP }],
       groupBy: 'sequenceId',
-      columns: ['code', 'status', 'description', 'frameIn', 'frameOut', 'totalFrames', 'dueDate', 'animationDue', 'assetIds'],
+      columns: ['image', 'code', 'status', 'description', 'frameIn', 'frameOut', 'totalFrames', 'dueDate', 'animationDue', 'assetIds'],
     },
     columnSettings: {
       status: { statusDisplay: 'long' },
@@ -159,7 +159,7 @@ export const pages: Page[] = [
       expandedFields: ['description', 'frameIn', 'frameOut', 'totalFrames', 'dueDate', 'assetIds'],
       columns: 4,
     },
-    thumbSettings: { captionFields: ['code', 'status'], size: 192 },
+    thumbSettings: { captionFields: ['code', 'status'], overlayFields: ['totalFrames'], size: 192 },
     ganttSettings: { startField: 'animationDue', endField: 'dueDate', zoom: 55 },
   },
   {
@@ -272,3 +272,47 @@ export const pages: Page[] = [
     query: { table: 'Reel', filters: [{ field: 'projectId', op: 'is', value: TSR }] },
   },
 ];
+
+/**
+ * Example conditional formats for the Lamplighter Shots page (shown in the conditional formatting stories).
+ * The two overlap on finaled shots; the earlier rule wins, so finals stay green.
+ */
+export const exampleConditionalFormats: ConditionalFormat[] = [
+  {
+    id: 'cf-final',
+    name: 'Finaled',
+    enabled: true,
+    match: 'all',
+    conditions: [{ field: 'status', op: 'any_of', value: { kind: 'values', values: ['final'] } }],
+    applyTo: 'row',
+    style: { background: 'var(--sgp-palette-green)' },
+  },
+  {
+    id: 'cf-anim-due',
+    name: 'Animation due within 30 days',
+    enabled: true,
+    match: 'all',
+    conditions: [{ field: 'animationDue', op: 'lte', value: { kind: 'today', offsetDays: 30 } }],
+    applyTo: 'row',
+    style: { text: 'var(--sgp-palette-red)', bold: true },
+  },
+];
+
+/** Example project-wide formats: these apply to every Shots page in The Last Lamplighter, after each page's own rules. */
+export const exampleProjectFormats: ConditionalFormat[] = [
+  {
+    id: 'cf-long',
+    name: 'Long shots',
+    enabled: true,
+    match: 'all',
+    conditions: [{ field: 'totalFrames', op: 'gte', value: { kind: 'value', value: 130 } }],
+    applyTo: 'totalFrames',
+    style: { border: 'var(--sgp-palette-amber)', text: 'var(--sgp-palette-amber)' },
+  },
+];
+
+/**
+ * Project-wide conditional formats, per project and table. They apply to every page on that table in the
+ * project, after the page's own rules. Changing them is a schema-level permission.
+ */
+export const projectConditionalFormats: Array<{ projectId: string; table: string; formats: ConditionalFormat[] }> = [];

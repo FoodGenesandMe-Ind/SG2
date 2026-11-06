@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { trackWidth, useColumnLayout } from './columns';
 import { Icon } from './Icon';
 import { HeaderSelectBox, RowTypeIcon, useRowSelection } from './selection';
 
@@ -125,6 +126,17 @@ export interface GanttColumn {
   width: string;
 }
 
+/** The left pane as the user arranged it: column order and widths, and where the divider sits. Saved with the page. */
+export interface GanttLayout {
+  order?: string[];
+  widths?: Record<string, number>;
+  /** Pane width in pixels; absent = exactly as wide as its columns. */
+  pane?: number;
+}
+
+const MIN_PANE = 120;
+const MIN_CHART = 160;
+
 export interface GanttRow {
   id: string;
   kind: 'group' | 'item';
@@ -139,6 +151,9 @@ export interface GanttRow {
   icon?: string;
   /** Values that can be shown beside the bar, chosen from the gantt's right-click menu. */
   fields?: Record<string, string>;
+  /** Conditional formatting for this row, already resolved. */
+  formatClass?: string;
+  formatStyle?: CSSProperties;
   dependsOn?: Array<{ rowId: string; type: DependencyType }>;
 }
 
@@ -221,14 +236,33 @@ export function Gantt({
   zoom,
   zebra,
   labelOptions = [],
+  layout: layoutProp,
+  onLayout,
+  onColumnContextMenu,
 }: {
   columns: GanttColumn[];
   rows: GanttRow[];
   zoom: number;
   zebra?: boolean;
   labelOptions?: GanttLabelOption[];
+  /** Controlled layout (saved with the page); without it the gantt keeps its own. */
+  layout?: GanttLayout;
+  onLayout?: (layout: GanttLayout) => void;
+  onColumnContextMenu?: (event: ReactMouseEvent, column: { key: string; label: string }) => void;
 }) {
+  const [ownLayout, setOwnLayout] = useState<GanttLayout>({});
+  const paneLayout = layoutProp ?? ownLayout;
+  const setPaneLayout = onLayout ?? setOwnLayout;
+  const columnWidths = paneLayout.widths ?? {};
+  const order = [
+    ...(paneLayout.order ?? []).filter((key) => columns.some((c) => c.key === key)),
+    ...columns.map((c) => c.key).filter((key) => !paneLayout.order?.includes(key)),
+  ];
+  const placed = order.map((key) => ({ column: columns.find((c) => c.key === key)!, index: columns.findIndex((c) => c.key === key) }));
   const scrollRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [panePx, setPanePx] = useState(0);
+  const [draggingDivider, setDraggingDivider] = useState(false);
   const leftRef = useRef<HTMLDivElement>(null);
   const firstRowRef = useRef<HTMLDivElement>(null);
   const [available, setAvailable] = useState(0);
@@ -241,9 +275,19 @@ export function Gantt({
   const ppd = pxPerDay(zoom);
   const tiers = TIERS[resolution];
   const withIcons = rows.some((r) => r.icon);
-  const widths = [...(withIcons ? ['1.75rem'] : []), ...columns.map((c) => c.width)];
-  const leftTemplate = widths.join(' ');
-  const leftWidth = `calc(${widths.join(' + ')})`;
+  const columnTracks = placed.map(({ column }) => trackWidth(columnWidths, column.key, column.width));
+  const widths = [...(withIcons ? ['1.75rem'] : []), ...columnTracks];
+  // A widened pane gives the extra room to the last column; a narrowed one clips the columns.
+  const leftTemplate = paneLayout.pane
+    ? [...widths.slice(0, -1), `minmax(${widths.at(-1)}, 1fr)`].join(' ')
+    : widths.join(' ');
+  const leftWidth = paneLayout.pane ? `${paneLayout.pane}px` : `calc(${widths.join(' + ')})`;
+  const columnLayout = useColumnLayout({
+    tableRef: innerRef,
+    order,
+    onOrder: (next) => setPaneLayout({ ...paneLayout, order: next }),
+    onWidth: (key, width) => setPaneLayout({ ...paneLayout, widths: { ...columnWidths, [key]: width } }),
+  });
   const selection = useRowSelection(rows.filter((r) => r.kind === 'item').map((r) => r.id));
   const rowHeight = { height: 'var(--sgp-row-compact)' };
 
@@ -260,6 +304,35 @@ export function Gantt({
   useLayoutEffect(() => {
     if (firstRowRef.current) setRowPx(firstRowRef.current.offsetHeight);
   }, [rows.length]);
+
+  useLayoutEffect(() => {
+    const pane = leftRef.current?.offsetWidth ?? 0;
+    setPanePx(pane);
+    if (scrollRef.current) setAvailable(scrollRef.current.clientWidth - pane);
+  }, [leftWidth, leftTemplate]);
+
+  const startDivider = (event: ReactPointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const start = leftRef.current?.offsetWidth ?? 0;
+    const max = (scrollRef.current?.clientWidth ?? 0) - MIN_CHART;
+    setDraggingDivider(true);
+    const previousCursor = document.body.style.cursor;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const move = (e: PointerEvent) =>
+      setPaneLayout({ ...paneLayout, pane: Math.round(Math.min(max, Math.max(MIN_PANE, start + e.clientX - startX))) });
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = '';
+      setDraggingDivider(false);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
 
   const { domainStart, domainEnd } = useMemo(() => {
     const days = rows.flatMap((r) => [r.start, r.end]).filter((d): d is string => !!d).map(dayNumber);
@@ -284,9 +357,13 @@ export function Gantt({
   const firstBarX = barDays.length ? x(Math.min(...barDays)) : todayX;
   const lastBarX = barDays.length ? x(Math.max(...barDays)) : todayX;
 
+  const anchoredFor = useRef('');
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    const key = `${todayX}-${firstBarX}-${lastBarX}`;
+    // Only re-anchor when the timeline itself changes, not while the divider or columns are being dragged.
+    if (!el || available <= 0 || anchoredFor.current === key) return;
+    anchoredFor.current = key;
     // Center on today when it falls within the work; otherwise jump to the nearest end of the work.
     const anchor = Math.min(Math.max(todayX, firstBarX), lastBarX);
     const margin = anchor === todayX ? available * 0.35 : anchor === firstBarX ? 24 : available - 24;
@@ -333,12 +410,13 @@ export function Gantt({
   );
 
   return (
-    <div ref={scrollRef} className="min-w-0 flex-1 overflow-auto bg-surface" role="grid" aria-label="Gantt">
-      <div className="relative" style={{ width: `calc(${leftWidth} + ${width}px)` }}>
+    <div className="relative flex min-h-0 min-w-0 flex-1">
+    <div ref={scrollRef} className="min-w-0 flex-1 overflow-auto bg-surface" role="grid" aria-label="Gantt" {...selection.containerProps}>
+      <div ref={innerRef} className="relative" style={{ width: `calc(${leftWidth} + ${width}px)` }}>
         <div className="sticky top-0 z-30 flex border-b border-line-strong bg-surface-sunken text-xs text-fg-muted">
           <div
             ref={leftRef}
-            className="sticky left-0 z-40 grid shrink-0 items-end border-r border-line-strong bg-surface-sunken text-sm font-medium"
+            className="sticky left-0 z-40 grid shrink-0 items-end overflow-hidden border-r border-line-strong bg-surface-sunken text-sm font-medium"
             style={{ gridTemplateColumns: leftTemplate, width: leftWidth, height: 'calc(var(--sgp-row-compact) * 2)' }}
           >
             {withIcons && (
@@ -346,9 +424,24 @@ export function Gantt({
                 <HeaderSelectBox state={selection.header} onClick={selection.onHeaderClick} count={selection.count} />
               </span>
             )}
-            {columns.map((c) => (
-              <span key={c.key} className="flex items-center px-2" style={rowHeight}>
-                {c.label}
+            {placed.map(({ column: c }) => (
+              <span
+                key={c.key}
+                {...columnLayout.headerProps(c.key, c.label)}
+                role="columnheader"
+                title="Drag to move, right-click for options"
+                onContextMenu={(event) => {
+                  if (!onColumnContextMenu) return;
+                  event.preventDefault();
+                  onColumnContextMenu(event, { key: c.key, label: c.label });
+                }}
+                className={`relative flex min-w-0 cursor-grab items-center px-2 hover:bg-row-hover ${
+                  columnLayout.movingCode === c.key ? 'bg-accent-subtle text-fg' : ''
+                }`}
+                style={rowHeight}
+              >
+                <span className="truncate">{c.label}</span>
+                {columnLayout.handle(c.key, c.label)}
               </span>
             ))}
           </div>
@@ -438,12 +531,13 @@ export function Gantt({
               aria-selected={row.kind === 'item' ? selected : undefined}
               onClick={row.kind === 'item' ? (event) => selection.onRowClick(row.id, event) : undefined}
               onMouseDown={selection.onRowMouseDown}
-              className={`group flex border-b border-line ${rowBg}`}
-              style={rowHeight}
+              {...(row.kind === 'item' ? selection.itemProps(row.id) : {})}
+              className={`group flex border-b border-line ${rowBg} ${row.formatClass ?? ''}`}
+              style={{ ...rowHeight, ...row.formatStyle }}
             >
               <div
-                className={`sticky left-0 z-20 grid shrink-0 items-center border-r border-line-strong text-md ${rowBg} group-hover:bg-row-hover`}
-                style={{ gridTemplateColumns: leftTemplate, width: leftWidth }}
+                className={`sticky left-0 z-20 grid shrink-0 items-center overflow-hidden border-r border-line-strong text-md ${rowBg} group-hover:bg-row-hover`}
+                style={{ gridTemplateColumns: leftTemplate, width: leftWidth, ...row.formatStyle }}
               >
                 {row.kind === 'group' ? (
                   <span className="flex min-w-0 items-center gap-2 px-2 text-sm" style={{ gridColumn: '1 / -1' }}>
@@ -458,14 +552,14 @@ export function Gantt({
                           </span>,
                         ]
                       : []),
-                    ...row.cells.map((cell, ci) => (
-                    <span key={ci} className="flex min-w-0 items-center gap-1 overflow-hidden px-2">
+                    ...placed.map(({ column, index: ci }) => (
+                    <span key={column.key} data-col={column.key} className="flex min-w-0 items-center gap-1 overflow-hidden px-2">
                       {ci === 0 && rowViolations && (
                         <span title={rowViolations.join('\n')} className="flex shrink-0 text-danger" aria-label="Dependency not met">
                           <Icon name="circle-alert" size={13} strokeWidth={2.25} />
                         </span>
                       )}
-                      {cell}
+                      {row.cells[ci]}
                     </span>
                   )),
                   ]
@@ -513,6 +607,7 @@ export function Gantt({
             </div>
           );
         })}
+        {columnLayout.overlay}
       </div>
       {menu && (
         <LabelMenu
@@ -526,6 +621,19 @@ export function Gantt({
           onClose={closeMenu}
         />
       )}
+    </div>
+      <span
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the column pane"
+        title="Drag to resize the columns beside the chart. Double-click to fit the columns."
+        onPointerDown={startDivider}
+        onDoubleClick={() => setPaneLayout({ ...paneLayout, pane: undefined })}
+        className="group/divider absolute top-0 bottom-0 z-40 flex w-2 -translate-x-1/2 cursor-col-resize justify-center"
+        style={{ left: panePx }}
+      >
+        <span className={`h-full w-0.5 ${draggingDivider ? 'bg-accent' : 'bg-transparent group-hover/divider:bg-accent'}`} />
+      </span>
     </div>
   );
 }

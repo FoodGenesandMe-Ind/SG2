@@ -1,6 +1,7 @@
 import {
   notes,
   pipelineSteps,
+  statusValues,
   tasks as allTasks,
   versions,
   type Asset,
@@ -10,6 +11,7 @@ import {
   type Task,
   type Version,
 } from '@sgp/mock-data';
+import { ganttGroupingProps, taskGroupFields, type GroupBucket } from './grouping';
 import { placeholderThumb } from './color';
 import type { Direction } from './directions';
 import { Icon } from './Icon';
@@ -18,13 +20,23 @@ import { Avatar, PersonChip, personName } from './people';
 import type { RecordSpec } from './RecordPage';
 import { StatusPill } from './StatusPill';
 import { formatDate, viewsFor } from './shotsPage';
-import { entityCode, TasksGantt, TodoSummary } from './TasksPage';
+import { entityCode, taskBucket, TasksGantt, TodoSummary } from './TasksPage';
 
 const PROJECT_ID = 'prj01';
 
 interface Ctx {
   direction: Direction;
   statusDisplay: StatusDisplay;
+}
+
+function textBucket(key: string, label: string, sort: number | string = label): GroupBucket {
+  return { key: key || 'none', label: label || 'None', detail: '', sort: label ? sort : '\uffff' };
+}
+
+function statusBucket(code: string): GroupBucket {
+  const value = statusValues.find((item) => item.code === code);
+  const order = statusValues.findIndex((item) => item.code === code);
+  return { key: code || 'none', label: value?.label ?? code ?? 'None', detail: '', sort: order < 0 ? 999 : order };
 }
 
 const pill = (ctx: Ctx, code: string) => (
@@ -70,8 +82,8 @@ export function taskSpec(list: Task[], ctx: Ctx, opts: { showLink?: boolean } = 
         : []),
       { key: 'assignee', label: 'Assigned to', width: '10rem', render: (t) => <PersonChip personId={t.assigneeId} /> },
       { key: 'status', label: 'Status', width: ctx.statusDisplay === 'long' ? '8.5rem' : '5rem', render: (t) => pill(ctx, t.status) },
-      { key: 'start', label: 'Start', width: '5.5rem', render: (t) => formatDate(t.startDate) },
-      { key: 'due', label: 'Due', width: '5.5rem', render: (t) => formatDate(t.dueDate) },
+      { key: 'start', label: 'Start', width: '7rem', render: (t) => formatDate(t.startDate) },
+      { key: 'due', label: 'Due', width: '7rem', render: (t) => formatDate(t.dueDate) },
       { key: 'deps', label: 'Depends on', width: '7rem', render: (t) => <span className="text-xs text-fg-muted">{dependencyText(t) || '-'}</span> },
       {
         key: 'bid',
@@ -123,10 +135,35 @@ export function taskSpec(list: Task[], ctx: Ctx, opts: { showLink?: boolean } = 
       ),
       badge: (t) => `${t.bidDays}d`,
     },
+    group: {
+      fields: [
+        { code: 'departmentId', label: 'Department' },
+        { code: 'stepId', label: 'Pipeline step' },
+        { code: 'assigneeId', label: 'Assigned to' },
+        { code: 'status', label: 'Status' },
+        { code: 'startDate', label: 'Start' },
+        { code: 'dueDate', label: 'Due' },
+        ...(opts.showLink ? [{ code: 'entityId', label: 'Link' }] : []),
+        { code: 'name', label: 'Task' },
+      ],
+      value: (task, field) => taskBucket(task, field, ctx.statusDisplay),
+    },
     gantt: {
       zoom: 19,
-      render: (zoom) => (
-        <TasksGantt direction={ctx.direction} statusDisplay={ctx.statusDisplay} zoom={zoom} taskList={list} grouping="none" />
+      render: (zoom, grouping, onColumnContextMenu) => (
+        <TasksGantt
+          direction={ctx.direction}
+          statusDisplay={ctx.statusDisplay}
+          zoom={zoom}
+          taskList={list}
+          grouping={grouping.length ? 'department' : 'none'}
+          levels={grouping.length ? grouping : undefined}
+          onColumnContextMenu={
+            onColumnContextMenu
+              ? (event, column) => onColumnContextMenu(event, { key: column.code, label: column.label })
+              : undefined
+          }
+        />
       ),
     },
   };
@@ -172,6 +209,20 @@ export function versionSpec(list: Version[], ctx: Ctx): RecordSpec<Version> {
         </>
       ),
       badge: (v) => `${v.frameOut - v.frameIn + 1}f`,
+    },
+    group: {
+      fields: [
+        { code: 'status', label: 'Status' },
+        { code: 'taskId', label: 'Task' },
+        { code: 'createdById', label: 'Artist' },
+        { code: 'submittedAt', label: 'Submitted' },
+      ],
+      value: (version, field) => {
+        if (field === 'status') return statusBucket(version.status);
+        if (field === 'taskId') return textBucket(version.taskId, taskName(version));
+        if (field === 'createdById') return textBucket(version.createdById, personName(version.createdById));
+        return textBucket(version.submittedAt.slice(0, 10), formatDateTime(version.submittedAt), version.submittedAt);
+      },
     },
   };
 }
@@ -232,10 +283,24 @@ export function noteSpec(
       ),
       badge: (n) => (n.frame !== undefined ? `Frame ${n.frame}` : 'Note'),
     },
+    group: {
+      fields: [
+        { code: 'status', label: 'Status' },
+        { code: 'authorId', label: 'From' },
+        { code: 'toId', label: 'To' },
+        { code: 'createdAt', label: 'Created' },
+      ],
+      value: (note, field) => {
+        if (field === 'status') return statusBucket(note.status);
+        if (field === 'authorId') return textBucket(note.authorId, personName(note.authorId));
+        if (field === 'toId') return textBucket(note.toId, personName(note.toId));
+        return textBucket(note.createdAt.slice(0, 10), formatDateTime(note.createdAt), note.createdAt);
+      },
+    },
   };
 }
 
-const KIND_ICON: Record<string, string> = { create: 'plus', update: 'pencil', delete: 'trash-2', config: 'settings', 'sign-in': 'log-in' };
+const KIND_ICON: Record<string, string> = { create: 'plus', update: 'pencil', delete: 'trash', config: 'settings', 'sign-in': 'log-in' };
 
 function ActivityItem({ event }: { event: PipelineEvent }) {
   const version = event.table === 'Version' ? versions.find((v) => v.id === event.recordId) : undefined;
@@ -298,6 +363,18 @@ export function activitySpec(list: PipelineEvent[]): RecordSpec<PipelineEvent> {
       caption: (e) => <span className="truncate text-xs">{e.description}</span>,
       badge: (e) => e.table,
     },
+    group: {
+      fields: [
+        { code: 'kind', label: 'Kind' },
+        { code: 'userId', label: 'Who' },
+        { code: 'table', label: 'Table' },
+      ],
+      value: (event, field) => {
+        if (field === 'kind') return textBucket(event.kind, event.kind);
+        if (field === 'userId') return textBucket(event.userId, personName(event.userId));
+        return textBucket(event.table, event.table);
+      },
+    },
   };
 }
 
@@ -338,6 +415,37 @@ export function assetSpec(list: Asset[], ctx: Ctx): RecordSpec<Asset> {
           <span className="truncate">{a.name}</span>
           <span className="ml-auto shrink-0">{pill({ ...ctx, statusDisplay: 'icon' }, a.status)}</span>
         </>
+      ),
+    },
+    group: {
+      fields: [
+        { code: 'type', label: 'Type' },
+        { code: 'status', label: 'Status' },
+        { code: 'scope', label: 'Scope' },
+      ],
+      value: (asset, field) => {
+        if (field === 'status') return statusBucket(asset.status);
+        if (field === 'type') return textBucket(asset.type, asset.type);
+        return textBucket(asset.projectId ?? 'library', asset.projectId === null ? 'Library' : 'Project');
+      },
+    },
+    gantt: {
+      separate: true,
+      zoom: 30,
+      taskFields: taskGroupFields('Asset'),
+      render: (zoom, grouping, onColumnContextMenu) => (
+        <TasksGantt
+          direction={ctx.direction}
+          statusDisplay={ctx.statusDisplay}
+          zoom={zoom}
+          taskList={allTasks.filter((task) => task.entityType === 'Asset' && list.some((asset) => asset.id === task.entityId))}
+          {...ganttGroupingProps(grouping, false)}
+          onColumnContextMenu={
+            onColumnContextMenu
+              ? (event, column) => onColumnContextMenu(event, { key: column.code, label: column.label })
+              : undefined
+          }
+        />
       ),
     },
   };

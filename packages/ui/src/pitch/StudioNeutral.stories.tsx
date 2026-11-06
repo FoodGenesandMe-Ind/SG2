@@ -1,4 +1,4 @@
-import { notes, type StatusDisplay } from '@sgp/mock-data';
+import { exampleConditionalFormats, exampleProjectFormats, notes, type StatusDisplay } from '@sgp/mock-data';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, within } from 'storybook/test';
 import { directions, type PillStyle } from './directions';
@@ -32,7 +32,7 @@ export const TableView: StoryObj<Args> = {
   render: (args) => (
     <StoryFrame
       title="Studio neutral: table view"
-      intro="The Shots page with totals at the top, grouped by sequence. Each row starts with the record's type icon (a shot). Click a row to select it and the icon becomes a tick; Shift+click selects a range, Cmd+click adds or removes one. Once anything is selected the header shows a tick box: faded for some, solid for all; click it to select all. Click a shot code to open its detail page."
+      intro="The Shots page with totals at the top, grouped by sequence. Group opens a dialog on every view, including a Tasks tab: up to ten fields. Drag a grip to reorder them; each field is ascending or descending. Grouping changes what you see right away. Saving the page so everyone else opens it that way stays with someone who can edit the page. Click a group arrow to collapse or expand it; Cmd+click collapses or expands every group at that level. Each row starts with the record's type icon (a shot). Click a row to select it and the icon becomes a tick; click it again to deselect it. Shift+click selects a range, Cmd+click adds or removes one. Press on a row and drag up or down to select every row you pass over. Click empty space or press Escape to clear the selection. Right-click a selection to copy, export a CSV, or delete (linked records are kept). After a copy, right-click empty space to paste; unique fields such as Shot are renamed, for example 020_0010 copy. Once anything is selected the header shows a tick box: faded for some, solid for all; click it to select all. Click a shot code to open its detail page."
     >
       <DarkAndLight
         key={`${args.pillStyle}-${args.statusDisplay}`}
@@ -50,7 +50,7 @@ export const CardView: StoryObj<Args> = {
   render: (args) => (
     <StoryFrame
       title="Studio neutral: card view"
-      intro="The same Shots page and query, flipped to cards. Use Columns (left of Search shots) to show 1 to 10 cards per row; the page default is 4. Collapse arrows sit on the left; LMP_030's cards start collapsed. Expanded fields come from the page's card settings."
+      intro="The same Shots page and query, flipped to cards. Use Columns (left of Search shots) to show 1 to 10 cards per row; the page default is 4. Collapse arrows sit on the left; LMP_030's cards start collapsed. Cmd+click a card arrow to collapse or expand every card, or a sequence arrow to collapse or expand every sequence. Drag across empty space (or from a card) to lasso cards and select them. Right-click a card to show or hide fields in its body. On a wide card the fields sit side by side and wrap only when they must, and every card keeps the same column stops."
     >
       <DarkAndLight
         key={`${args.pillStyle}-${args.statusDisplay}`}
@@ -71,13 +71,34 @@ export const ThumbnailView: StoryObj<Args> = {
   render: (args) => (
     <StoryFrame
       title="Studio neutral: thumbnail view"
-      intro="The same Shots page as a thumbnail wall. Drag the size slider (left of Search shots) to resize thumbnails. Captions come from the page's thumbnail settings (shot and status); frame counts sit on each thumbnail."
+      intro="The same Shots page as a thumbnail wall. Drag the size slider (left of Search shots) to resize thumbnails. Drag a lasso around thumbnails to select them; hold Cmd or Shift to add to the selection. Right-click a thumbnail to show a field inside the image or below it. Shot and status start below; the frame count starts inside. Cmd+click a sequence arrow to collapse or expand every sequence."
     >
       <DarkAndLight
         key={`${args.pillStyle}-${args.statusDisplay}`}
         direction={{ ...studioNeutral, pillStyle: args.pillStyle }}
         initialStatusDisplay={args.statusDisplay}
         initialView="thumb"
+        showComponents={false}
+        height={760}
+      />
+    </StoryFrame>
+  ),
+};
+
+export const KanbanView: StoryObj<Args> = {
+  name: 'Kanban view',
+  args: { pillStyle: 'icon', statusDisplay: 'long' },
+  argTypes: controls,
+  render: (args) => (
+    <StoryFrame
+      title="Studio neutral: kanban view"
+      intro="The Last Lamplighter has Kanban turned on for Shots. Columns start as Status. The field menu next to Columns can switch them to any status, list, link, or person field. Columns sets how many columns are on screen, from 1 to 20, default 4. When Status has more than that, the chevrons step left and right. Right-click a card to choose its fields; that list is separate from card view. Empty columns stay in the list."
+    >
+      <DarkAndLight
+        key={`${args.pillStyle}-${args.statusDisplay}`}
+        direction={{ ...studioNeutral, pillStyle: args.pillStyle }}
+        initialStatusDisplay={args.statusDisplay}
+        initialView="kanban"
         showComponents={false}
         height={760}
       />
@@ -138,7 +159,7 @@ export const SubTasks: StoryObj<Args> = {
   render: (args) => (
     <StoryFrame
       title="Sub-tasks"
-      intro="Shot 010_0030's Comp task is split into two sub-tasks, each assigned to a different artist with its own to-do list: Roto Pip's wings (Kwame, done) and Skyline matte integration (Hana, in progress). Animation tasks show Blocking, Spline, and Polish. Switch the Tasks tab between Table, Cards, Thumbnails, and Gantt."
+      intro="Shot 010_0030's Comp task is split into two sub-tasks, each assigned to a different artist with its own to-do list: Roto Pip's wings (Kwame, done) and Skyline matte integration (Hana, in progress). Animation tasks show Blocking, Spline, and Polish. Switch the Tasks tab between Table, Cards, Thumbnails, and Gantt. Group is on that tab too, the same dialog as on a page."
     >
       <DarkAndLight
         key={`${args.pillStyle}-${args.statusDisplay}`}
@@ -212,7 +233,7 @@ export const TasksGanttView: StoryObj<Args> = {
   render: (args) => (
     <StoryFrame
       title="Studio neutral: Tasks page in gantt view"
-      intro="Tasks grouped by department, then pipeline step (Shot Finaling holds FX, Lighting, and Comp). Animation tasks show their Blocking, Spline, and Polish sub-tasks; the To do column summarizes each task's checklist. Drag the time scale slider from Days to Years; the headings change with it. Switch to Table for the same tasks with totals at the top."
+      intro="Tasks grouped by department, then pipeline step (Shot Finaling holds FX, Lighting, and Comp). Animation tasks show their Blocking, Spline, and Polish sub-tasks; the To do column summarizes each task's checklist. Drag the time scale slider from Days to Years; the headings change with it. Cmd+click a department arrow to collapse or expand every department, or a step arrow to collapse or expand every step. Switch to Table for the same tasks with totals at the top."
     >
       <DarkAndLight
         key={`${args.pillStyle}-${args.statusDisplay}`}
@@ -234,7 +255,7 @@ export const ShotsGanttView: StoryObj<Args> = {
   render: (args) => (
     <StoryFrame
       title="Studio neutral: Shots page in gantt view"
-      intro="Every gantt in SGPipeline is a gantt of Tasks. On the Shots page, the Gantt view is really a page of the shots' Tasks, grouped by Shot, then Step, as the strip above the chart says. Bars carry no text by default; right-click the timeline to show a field to the left or right of the bars."
+      intro="Every gantt in SGPipeline is a gantt of Tasks. On the Shots page, the Gantt view is really a page of the shots' Tasks, grouped by Shot, then Step, as the strip above the chart says. Bars carry no text by default; right-click the timeline to show a field to the left or right of the bars. Cmd+click a shot group arrow to collapse or expand every shot group."
     >
       <DarkAndLight
         key={`${args.pillStyle}-${args.statusDisplay}`}
@@ -278,6 +299,93 @@ export const StatusColumnMenu: StoryObj = {
     await choose('Long name');
     await expect(canvas.getAllByTitle('In Comp/Light')[0]).toHaveTextContent('In Comp/Light');
   },
+};
+
+export const ColumnsAndPageMenu: StoryObj = {
+  name: 'Columns and the Page menu',
+  tags: ['proposed'],
+  render: () => (
+    <StoryFrame
+      title="Move and size columns; save, revert, or keep a copy"
+      intro={
+        <>
+          Drag a column header left or right to move the column. Drag the edge of a header to resize, or double-click the
+          edge to fit the column to its widest value, as in Excel. The thumbnail is a column too: widen it and the rows grow
+          to keep each thumbnail 16:9. The record icon always stays first. In Gantt view, the columns beside the chart move
+          and resize the same way, and the divider between them and the chart drags left or right (double-click it to fit
+          the columns). The Page icon at the top right turns dirty (amber, with a
+          dot) as soon as the page differs from how it was saved, including view, thumbnail size, card columns, status
+          display, and the gantt columns, divider, and time scale. Click it to Revert, Save, Save as new page, or Save into My Pages. The options
+          follow your permissions: Nephi (Admin, Producer) sees all four; Lena, an artist, sees only Revert and Save into My
+          Pages. Copies appear in the navigation and open right away.
+        </>
+      }
+    >
+      <ThemeLabel>Nephi Sanchez: Admin, Producer</ThemeLabel>
+      <Specimen direction={studioNeutral} theme="dark" showComponents={false} height={560} viewerId="p01" />
+      <ThemeLabel>Lena Fischer: Artist</ThemeLabel>
+      <Specimen direction={studioNeutral} theme="dark" showComponents={false} height={560} viewerId="p09" />
+    </StoryFrame>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await pause(600);
+    await userEvent.dblClick(canvas.getAllByRole('separator', { name: 'Resize Description' })[0]);
+    await pause(400);
+    await expect(canvas.getAllByRole('button', { name: 'Page has unsaved changes' })).toHaveLength(1);
+    await userEvent.click(canvas.getByRole('button', { name: 'Page has unsaved changes' }));
+    await expect(canvas.getByRole('menuitem', { name: /Save as new page/ })).toBeVisible();
+  },
+};
+
+export const ConditionalFormatting: StoryObj = {
+  name: 'Conditional formatting: rules',
+  tags: ['proposed'],
+  render: () => (
+    <StoryFrame
+      title="Conditional formatting"
+      intro={
+        <>
+          Right-click any column header and choose Conditional formatting. Each rule applies to this page only or
+          project-wide (every Shots page in the project, for everyone; admins only). Rules run from the top, this page's
+          rules before project-wide ones, and when several match a row (or a cell) the one highest in the list sets its
+          format; reorder with the arrows. With no rules, the form still shows prompts and + New rule (under Format) adds it;
+          Apply stays inactive until a rule is added, edited, reordered, or deleted. Each rule is 1. When: pick a
+          field, then an operator and a value narrowed to that field (dates offer Today plus or minus days, a date, or
+          another date field; statuses offer only that field's values), 2. Format: text, background, and border colors from
+          the data palette or a custom color, plus bold, for the whole row or one cell, and 3. Preview: how many shots match
+          on this page, and which ones a higher rule already formats. Opened here from the Animation due column, so the
+          rule that uses it is selected. Apply, then save page rules from the Page menu; project-wide changes take effect on
+          Apply. Artists see the option disabled on shared
+          pages; they can format their own copy in My Pages.
+        </>
+      }
+    >
+      <Specimen
+        direction={studioNeutral}
+        theme="dark"
+        showComponents={false}
+        height={720}
+        initialFormats={exampleConditionalFormats}
+        initialProjectFormats={exampleProjectFormats}
+        initialFormatColumn="animationDue"
+      />
+    </StoryFrame>
+  ),
+};
+
+export const ConditionalFormattingResult: StoryObj = {
+  name: 'Conditional formatting: result',
+  tags: ['proposed'],
+  render: () => (
+    <StoryFrame
+      title="The Shots page with three formats"
+      intro="Finaled shots get a green row (rule 1). Shots whose animation is due within 30 days get bold red text (rule 2), except the finaled ones, because rule 1 is higher in the list. Shots of 130 frames or more get an amber Total Frames cell (rule 3, project-wide, so it shows on every Shots page in the project). Status icons keep their own colors."
+    >
+      <DarkAndLight direction={studioNeutral} showComponents={false} height={460} initialFormats={exampleConditionalFormats}
+        initialProjectFormats={exampleProjectFormats} />
+    </StoryFrame>
+  ),
 };
 
 export const NavigationDocking: StoryObj = {

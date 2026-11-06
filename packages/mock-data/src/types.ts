@@ -25,14 +25,20 @@ export type FieldType =
   | 'todos';
 
 /**
- * Structured expression tree built by the visual formula builder. Users never type syntax;
+ * Structured expression tree. The formula editor shows it as chips (typed or clicked);
  * the server type-checks the tree and compiles it to SQL.
  */
 export type Expr =
   | { field: string }
   | { value: number | string }
   | { duration: { days?: number; weeks?: number } }
-  | { op: 'add' | 'subtract' | 'multiply' | 'divide'; args: Expr[] }
+  | {
+      op: 'add' | 'subtract' | 'multiply' | 'divide' | 'gt' | 'lt' | 'gte' | 'lte' | 'eq' | 'neq' | 'and' | 'or';
+      args: Expr[];
+    }
+  /** Older shape, read as if / then / else chips. */
+  | { fn: 'if'; args: [Expr, Expr, Expr] }
+  | { cond: { branches: Array<{ when: Expr; then: Expr }>; otherwise?: Expr } }
   | { aggregate: 'sum' | 'count' | 'avg' | 'min' | 'max'; table: string; via: string; field?: string };
 
 export interface FieldDef {
@@ -46,6 +52,11 @@ export interface FieldDef {
   formula?: Expr;
   /** All possible status or list codes; layers narrow and order them. */
   validValues?: string[];
+  /**
+   * Values must be unique among this table's records in the project (or the whole table).
+   * A paste that would collide is renamed, for example "020_0010 copy".
+   */
+  unique?: 'project' | 'table';
 }
 
 export interface TableDef {
@@ -428,10 +439,19 @@ export interface Filter {
   value?: string | number | null | string[];
 }
 
+/** One level of page grouping. Ascending follows the field's own order. */
+export interface GroupLevel {
+  field: string;
+  direction: 'asc' | 'desc';
+}
+
 export interface PageQuery {
   table: string;
   filters: Filter[];
+  /** First grouping field, kept for queries that store a single field. */
   groupBy?: string;
+  /** Ordered grouping. When absent, the page uses groupBy, ascending. */
+  grouping?: GroupLevel[];
   columns?: string[];
 }
 
@@ -462,6 +482,8 @@ export interface ColumnSettings {
   statusDisplay?: StatusDisplay;
   /** Shown in group rows and the page's total row. */
   summary?: SummaryKind;
+  /** Column width in pixels, set by dragging or double-clicking the header edge; absent = the field's default. */
+  width?: number;
 }
 
 /** A table the client filed into a folder; unplaced tables sit at their level's root. */
@@ -480,6 +502,8 @@ export interface CardSettings {
 
 export interface ThumbSettings {
   captionFields: string[];
+  /** Fields drawn on the image. A field is either here or in the caption, not both. */
+  overlayFields?: string[];
   /** Thumbnail width in pixels, set with the size slider. */
   size?: number;
 }
@@ -489,10 +513,20 @@ export interface GanttSettings {
   endField: string;
   /** Time scale slider position, 0 (days) to 100 (years). */
   zoom?: number;
+  /** Columns beside the chart, in order, with widths in pixels. */
+  columns?: string[];
+  columnWidths?: Record<string, number>;
+  /** Width of the column pane in pixels, set by dragging the divider; absent = as wide as its columns. */
+  paneWidth?: number;
+  /**
+   * Grouping of the tasks this gantt shows, for a page whose own table is not Task.
+   * Absent means the gantt is still grouped by the linked record.
+   */
+  taskGrouping?: GroupLevel[];
 }
 
 /** Every table page can flip between these views of the same query; gantt needs date fields. */
-export type TableView = 'table' | 'card' | 'thumb' | 'gantt';
+export type TableView = 'table' | 'card' | 'thumb' | 'kanban' | 'gantt';
 
 interface PageBase {
   id: string;
@@ -504,14 +538,71 @@ interface PageBase {
   folderId?: string;
 }
 
+/** Operators offered for a condition; the field's type decides which ones apply. */
+export type ConditionOp =
+  | 'eq'
+  | 'neq'
+  | 'lt'
+  | 'lte'
+  | 'gt'
+  | 'gte'
+  | 'contains'
+  | 'not_contains'
+  | 'starts_with'
+  | 'any_of'
+  | 'none_of'
+  | 'empty'
+  | 'not_empty'
+  | 'checked'
+  | 'unchecked';
+
+/** What a condition compares against: a typed value, today plus or minus days, or another field on the record. */
+export type ConditionValue =
+  | { kind: 'value'; value: string | number }
+  | { kind: 'values'; values: string[] }
+  | { kind: 'today'; offsetDays: number }
+  | { kind: 'field'; field: string };
+
+export interface FormatCondition {
+  field: string;
+  op: ConditionOp;
+  value?: ConditionValue;
+}
+
+/** Colors are client data (any CSS color, usually from the default data palette). */
+export interface FormatStyle {
+  text?: string;
+  background?: string;
+  border?: string;
+  bold?: boolean;
+}
+
+/**
+ * One rule in a page's ordered list. When rules overlap, the first matching rule in the list
+ * wins for each row (and for each cell). Stored like every expression: structured, never as syntax.
+ */
+export interface ConditionalFormat {
+  id: string;
+  name: string;
+  enabled: boolean;
+  match: 'all' | 'any';
+  conditions: FormatCondition[];
+  /** 'row' formats the whole row; otherwise the code of the one column to format. */
+  applyTo: 'row' | string;
+  style: FormatStyle;
+}
+
 export interface TablePage extends PageBase {
   type: 'table';
   view: TableView;
   query: PageQuery;
   columnSettings?: Record<string, ColumnSettings>;
+  conditionalFormats?: ConditionalFormat[];
   cardSettings?: CardSettings;
   thumbSettings?: ThumbSettings;
   ganttSettings?: GanttSettings;
+  /** Kanban, when this project has enabled it for the page's table. */
+  kanban?: { field?: string; columns?: number; fields?: string[] };
 }
 
 export interface DashboardPage extends PageBase {

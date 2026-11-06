@@ -168,3 +168,12 @@
   --sgp-radius-md: 7px;
   --sgp-radius-lg: 12px;
 }
+
+/*
+ * Conditional formatting: a rule's text color (client data, set inline as --sgp-cf-text) wins over the
+ * muted, subtle, and accent text inside the formatted row or cell. Status icons and record-type icons keep their own colors.
+ */
+.sgp-cf-text,
+.sgp-cf-text :is(.text-fg, .text-fg-muted, .text-fg-subtle, .text-accent):not(.sgp-cf-keep *) {
+  color: var(--sgp-cf-text) !important;
+}

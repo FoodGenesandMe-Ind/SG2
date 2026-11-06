@@ -15,6 +15,10 @@ export function ColumnMenu({
   columnLabel,
   statusDisplay,
   onStatusDisplay,
+  onConditionalFormat,
+  conditionalFormatBlocked,
+  onManageColumns,
+  onConfigureField,
   onClose,
 }: {
   x: number;
@@ -22,6 +26,11 @@ export function ColumnMenu({
   columnLabel: string;
   statusDisplay?: StatusDisplay;
   onStatusDisplay?: (display: StatusDisplay) => void;
+  onConditionalFormat?: () => void;
+  /** Why the viewer can't add formats here; the item shows disabled with this explanation. */
+  conditionalFormatBlocked?: string;
+  onManageColumns?: () => void;
+  onConfigureField?: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -54,6 +63,30 @@ export function ColumnMenu({
       style={{ left: x, top: y, boxShadow: 'var(--sgp-shadow-overlay)' }}
     >
       <span className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-fg-subtle">{columnLabel}</span>
+      <button
+        role="menuitem"
+        className={item}
+        style={height}
+        onClick={() => {
+          onManageColumns?.();
+          onClose();
+        }}
+      >
+        <Icon name="columns-3" /> Manage columns
+      </button>
+      {onConfigureField && (
+        <button
+          role="menuitem"
+          className={item}
+          style={height}
+          onClick={() => {
+            onConfigureField();
+            onClose();
+          }}
+        >
+          <Icon name="settings" /> Configure field
+        </button>
+      )}
       <button role="menuitem" className={`${item} text-fg-muted`} style={height}>
         <Icon name="arrow-down-a-z" /> Sort ascending
       </button>
@@ -85,6 +118,25 @@ export function ColumnMenu({
               {option.label}
             </button>
           ))}
+        </>
+      )}
+      {(onConditionalFormat || conditionalFormatBlocked) && (
+        <>
+          <div className="my-1 border-t border-line" />
+          <button
+            role="menuitem"
+            className={`${item} disabled:opacity-40 disabled:hover:bg-transparent`}
+            style={height}
+            disabled={!onConditionalFormat}
+            title={conditionalFormatBlocked}
+            onClick={() => {
+              onConditionalFormat?.();
+              onClose();
+            }}
+          >
+            <Icon name="palette" /> Conditional formatting…
+          </button>
+          {conditionalFormatBlocked && <span className="px-2 pb-1 text-xs text-fg-subtle">{conditionalFormatBlocked}</span>}
         </>
       )}
       <div className="my-1 border-t border-line" />

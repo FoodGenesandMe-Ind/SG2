@@ -137,8 +137,18 @@ function NavHeader({ mode, onToggleDock }: { mode: NavMode; onToggleDock: () => 
   );
 }
 
-function NavPanel({ mode, onToggleDock, viewerId }: { mode: NavMode; onToggleDock: () => void; viewerId: string }) {
-  const nav = buildNavTree(viewerId);
+function NavPanel({
+  mode,
+  onToggleDock,
+  viewerId,
+  extraPages,
+}: {
+  mode: NavMode;
+  onToggleDock: () => void;
+  viewerId: string;
+  extraPages: Page[];
+}) {
+  const nav = buildNavTree(viewerId, extraPages);
   const scrollRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = savedScrollTop;
@@ -188,13 +198,15 @@ interface NavBodyProps {
   onToggleDock: () => void;
   onToggleOverlay: () => void;
   viewerId?: string;
+  /** Pages saved during this session. */
+  extraPages?: Page[];
 }
 
-function NavBody({ mode, overlayOpen, onToggleDock, onToggleOverlay, viewerId = 'p01' }: NavBodyProps) {
+function NavBody({ mode, overlayOpen, onToggleDock, onToggleOverlay, viewerId = 'p01', extraPages = [] }: NavBodyProps) {
   if (mode === 'docked') {
     return (
       <nav aria-label="Navigation" className="flex w-64 shrink-0 flex-col border-r border-line bg-nav">
-        <NavPanel mode={mode} onToggleDock={onToggleDock} viewerId={viewerId} />
+        <NavPanel mode={mode} onToggleDock={onToggleDock} viewerId={viewerId} extraPages={extraPages} />
       </nav>
     );
   }
@@ -220,7 +232,7 @@ function NavBody({ mode, overlayOpen, onToggleDock, onToggleOverlay, viewerId = 
           className="absolute top-0 bottom-0 left-10 z-30 flex w-64 flex-col border-r border-line-strong bg-nav"
           style={{ boxShadow: 'var(--sgp-shadow-overlay)' }}
         >
-          <NavPanel mode={mode} onToggleDock={onToggleDock} viewerId={viewerId} />
+          <NavPanel mode={mode} onToggleDock={onToggleDock} viewerId={viewerId} extraPages={extraPages} />
         </nav>
       )}
     </>

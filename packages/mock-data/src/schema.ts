@@ -164,7 +164,8 @@ const catalog: TableDef[] = [
     icon: 'film',
     fields: [
       { ...projectLink },
-      { code: 'code', label: 'Shot', type: 'text', system: true },
+      { code: 'image', label: 'Thumbnail', type: 'media', system: true },
+      { code: 'code', label: 'Shot', type: 'text', system: true, unique: 'project' },
       { code: 'sequenceId', label: 'Sequence', type: 'entity', linkTo: ['Sequence'], system: true },
       {
         code: 'status',

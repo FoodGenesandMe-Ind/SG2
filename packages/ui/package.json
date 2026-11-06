@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@sgp/tokens": "*",
+    "@tabler/icons-react": "^3.50.0",
     "echarts": "^6.1.0",
     "lucide-react": "^1.66.0"
   },

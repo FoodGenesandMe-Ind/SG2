@@ -1,23 +1,53 @@
-import { company, type StatusDisplay, type TableView } from '@sgp/mock-data';
-import { useCallback, useState, type ReactNode } from 'react';
+import {
+  company,
+  folders,
+  people,
+  permissionsFor,
+  type EffectiveField,
+  projectConditionalFormats,
+  resolveTableConfig,
+  sameScope,
+  type ConditionalFormat,
+  type Shot,
+  type StatusDisplay,
+  type TablePage,
+  type TableView,
+} from '@sgp/mock-data';
+import { useCallback, useState, type MouseEvent, type ReactNode } from 'react';
 import { ColumnMenu } from './ColumnMenu';
+import { ConfigureFieldDialog, ManageColumnsDialog } from './ManageColumnsDialog';
+import { ConditionalFormatDialog } from './ConditionalFormatDialog';
 import { ComponentStrip } from './ComponentStrip';
 import type { Direction } from './directions';
-import { GanttZoomSlider } from './Gantt';
+import { GanttZoomSlider, type GanttLayout } from './Gantt';
 import { Icon } from './Icon';
 import { NavTreeSpecimen, type NavMode } from './NavTreeSpecimen';
 import { NoteDetail } from './NoteDetail';
+import { PageMenu } from './PageMenu';
+import { completeLayout, layoutChanges, layoutFromPage, pageWithLayout, type PageLayout } from './pageLayout';
 import { RecordCards, RecordThumbs } from './RecordPage';
 import { taskSpec } from './recordSpecs';
 import { ShotDetail, type ShotTab } from './ShotDetail';
 import { DashboardPage } from './Dashboard';
 import { IssueDetail } from './IssueDetail';
 import { ShotGridSpecimen } from './ShotGridSpecimen';
-import { ShotCardsView, ShotThumbsView } from './ShotViews';
+import { kanbanFields, ShotCardsView, ShotKanbanView, ShotThumbsView } from './ShotViews';
 import { getTasksPage, TASKS_PAGE_ID, TasksGantt, TasksTable } from './TasksPage';
 import { tasks as allTasks } from '@sgp/mock-data';
-import { AddButton, CardColumnsPicker, clampColumns, SearchField, ThumbSizeSlider, ViewSwitcher } from './PageControls';
-import { getShotsPage, viewsFor } from './shotsPage';
+import { AddButton, CardColumnsPicker, clampColumns, clampKanbanColumns, KANBAN_COLUMNS, SearchField, ThumbSizeSlider, ViewSwitcher } from './PageControls';
+import {
+  copyShots,
+  DeleteRecordsDialog,
+  exportShotsCsv,
+  PasteRecordsDialog,
+  planPaste,
+  RecordActionMenu,
+  shotClip,
+  useCopiedShots,
+} from './recordActions';
+import { ganttGroupingProps, isGroupable, groupingLabel, taskGroupFields } from './grouping';
+import { GroupDialog } from './GroupDialog';
+import { getShotsPage, viewsFor, withGrouping, withShotEdits, withShotPatches } from './shotsPage';
 
 const SHOTS_PAGE_ID = 'pg-lmp-shots';
 const DASHBOARD_PAGE_ID = 'pg-lmp-producer-dashboard';
@@ -32,7 +62,9 @@ export type SpecimenDetail =
   | { kind: 'note'; id: string }
   | { kind: 'issue'; id: string };
 
-function TopBar() {
+function TopBar({ viewerId }: { viewerId: string }) {
+  const viewer = people.find((p) => p.id === viewerId);
+  const initials = (viewer?.name ?? '?').split(' ').map((w) => w[0]).join('').slice(0, 2);
   return (
     <header className="flex h-10 shrink-0 items-center gap-4 bg-chrome px-3 text-chrome-fg">
       <span className="flex items-center gap-2 font-semibold tracking-tight">
@@ -52,8 +84,11 @@ function TopBar() {
         <Icon name="sparkles" size={16} />
         <Icon name="inbox" size={16} />
         <Icon name="bell" size={16} />
-        <span className="flex size-7 items-center justify-center rounded-full bg-accent text-xs font-semibold text-fg-inverse">
-          NS
+        <span
+          className="flex size-7 items-center justify-center rounded-full bg-accent text-xs font-semibold text-fg-inverse"
+          title={viewer?.name}
+        >
+          {initials}
         </span>
       </span>
     </header>
@@ -62,6 +97,8 @@ function TopBar() {
 
 function PageHeader({
   title,
+  folder,
+  pageMenu,
   summary,
   searchLabel,
   addLabel,
@@ -69,8 +106,13 @@ function PageHeader({
   view,
   onView,
   controls,
+  groupingLabel,
+  onGroup,
+  onManageColumns,
 }: {
   title: string;
+  folder: string;
+  pageMenu?: ReactNode;
   summary: string;
   searchLabel: string;
   addLabel: string;
@@ -78,6 +120,10 @@ function PageHeader({
   view: TableView;
   onView: (view: TableView) => void;
   controls?: ReactNode;
+  /** Fields the page is grouped by, in order. Absent when it is not grouped. */
+  groupingLabel?: string;
+  onGroup: () => void;
+  onManageColumns: () => void;
 }) {
   const height = { height: 'var(--sgp-row-compact)' };
   return (
@@ -85,21 +131,34 @@ function PageHeader({
       <div className="flex items-center gap-1 text-xs text-fg-subtle">
         <span>The Last Lamplighter</span>
         <Icon name="chevron-right" size={12} />
-        <span>Production</span>
+        <span>{folder}</span>
         <Icon name="chevron-right" size={12} />
         <span className="text-fg-muted">{title}</span>
+        <span className="ml-auto">{pageMenu}</span>
       </div>
       <div className="flex items-center gap-2">
         <h1 className="mr-2 text-xl font-semibold">{title}</h1>
         <span className="text-sm text-fg-subtle">{summary}</span>
         <span className="ml-auto flex items-center">{controls}</span>
         <SearchField label={searchLabel} />
-        <span
-          className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-sm text-fg-muted"
+        <button
+          className="flex size-7 items-center justify-center rounded-md border border-line-strong text-fg-muted hover:bg-row-hover hover:text-fg"
           style={height}
+          aria-label="Manage columns"
+          title="Manage columns"
+          onClick={onManageColumns}
+        >
+          <Icon name="columns-3" size={14} />
+        </button>
+        <button
+          className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-sm text-fg-muted hover:bg-row-hover hover:text-fg"
+          style={height}
+          aria-haspopup="dialog"
+          onClick={onGroup}
         >
           <Icon name="sliders-horizontal" /> Group
-        </span>
+          {groupingLabel && <span className="font-medium text-fg">{groupingLabel}</span>}
+        </button>
         <ViewSwitcher views={views} view={view} onView={onView} />
         <AddButton label={addLabel} />
       </div>
@@ -129,6 +188,14 @@ export interface SpecimenProps {
   initialDetail?: SpecimenDetail;
   showComponents?: boolean;
   height?: number;
+  /** Whose permissions decide the Page menu options. */
+  viewerId?: string;
+  /** Conditional formats the Shots page starts with (as saved). */
+  initialFormats?: ConditionalFormat[];
+  /** Opens the conditional formatting dialog from this column on load. */
+  initialFormatColumn?: string;
+  /** Project-wide formats for Shots in this project. */
+  initialProjectFormats?: ConditionalFormat[];
 }
 
 export function Specimen({
@@ -142,19 +209,37 @@ export function Specimen({
   initialDetail,
   showComponents = true,
   height = 600,
+  viewerId = 'p01',
+  initialFormats,
+  initialFormatColumn,
+  initialProjectFormats,
 }: SpecimenProps) {
-  const shotsPage = getShotsPage();
+  const baseShotsPage = getShotsPage();
+  const [shotPatches, setShotPatches] = useState<Record<string, Partial<Shot>>>({});
+  const [addedShots, setAddedShots] = useState<Shot[]>([]);
+  const [removedShotIds, setRemovedShotIds] = useState<string[]>([]);
+  const shotsEdited = withShotEdits(baseShotsPage, addedShots, removedShotIds);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [customFields, setCustomFields] = useState<EffectiveField[]>([]);
+  const [removedFieldCodes, setRemovedFieldCodes] = useState<string[]>([]);
+  const [fieldPatches, setFieldPatches] = useState<Record<string, Partial<EffectiveField>>>({});
+  const [configure, setConfigure] = useState<{ code: string; table: 'Shot' | 'Task' } | null>(null);
+  const [locks, setLocks] = useState<Record<string, 'locked' | 'system'>>({ sh010_10: 'locked', sh030_30: 'system' });
+  const copiedShots = useCopiedShots();
+  const [shotMenu, setShotMenu] = useState<
+    { kind: 'records'; x: number; y: number; shots: Shot[] } | { kind: 'paste'; x: number; y: number } | null
+  >(null);
+  const [recordConfirm, setRecordConfirm] = useState<{ kind: 'delete'; shots: Shot[] } | { kind: 'paste' } | null>(null);
+  const recordActions = {
+    onRecords: (event: MouseEvent, shots: Shot[]) => setShotMenu({ kind: 'records', x: event.clientX, y: event.clientY, shots }),
+    onBlank: (event: MouseEvent) => {
+      if (copiedShots) setShotMenu({ kind: 'paste', x: event.clientX, y: event.clientY });
+    },
+  };
   const tasksPage = getTasksPage();
-  const [page, setPage] = useState<SpecimenPage>(initialPage);
   const [detail, setDetail] = useState<SpecimenDetail | null>(initialDetail ?? null);
   const openShot = (id: string) => setDetail({ kind: 'shot', id });
-  const [shotsView, setShotsView] = useState<TableView>(initialPage === 'shots' ? initialView ?? 'table' : 'table');
-  const [tasksView, setTasksView] = useState<TableView>(
-    initialPage === 'tasks' ? initialView ?? tasksPage.page.view : tasksPage.page.view,
-  );
-  const [statusDisplay, setStatusDisplay] = useState<StatusDisplay>(
-    initialStatusDisplay ?? shotsPage.settings.status?.statusDisplay ?? 'long',
-  );
   const [navMode, setNavModeState] = useState<NavMode>(
     () => initialNavMode ?? ((typeof localStorage !== 'undefined' && (localStorage.getItem(NAV_MODE_KEY) as NavMode)) || 'docked'),
   );
@@ -163,26 +248,170 @@ export function Specimen({
     if (typeof localStorage !== 'undefined') localStorage.setItem(NAV_MODE_KEY, mode);
   };
   const [navOpen, setNavOpen] = useState(initialNavOpen);
-  const [thumbSize, setThumbSize] = useState(shotsPage.page.thumbSettings?.size ?? 192);
-  const [cardColumns, setCardColumns] = useState(shotsPage.page.cardSettings?.columns ?? 4);
-  const [shotsZoom, setShotsZoom] = useState(shotsPage.page.ganttSettings?.zoom ?? 55);
-  const [tasksZoom, setTasksZoom] = useState(tasksPage.page.ganttSettings?.zoom ?? 30);
   const [menu, setMenu] = useState<{ x: number; y: number; field: string; label: string } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const [formatColumn, setFormatColumn] = useState<string | null>(initialFormatColumn ?? null);
+  const [projectFormats, setProjectFormats] = useState<ConditionalFormat[]>(
+    () =>
+      initialProjectFormats ??
+      projectConditionalFormats.find((p) => p.projectId === PROJECT_ID && p.table === 'Shot')?.formats ??
+      [],
+  );
 
-  const activePageId =
-    detail?.kind === 'issue'
-      ? 'pg-issues'
-      : page === 'shots'
-        ? SHOTS_PAGE_ID
-        : page === 'tasks'
-          ? TASKS_PAGE_ID
-          : DASHBOARD_PAGE_ID;
-  const openPage = (pageId: string) => {
-    if (pageId === SHOTS_PAGE_ID) setPage('shots');
-    else if (pageId === TASKS_PAGE_ID) setPage('tasks');
-    else if (pageId === DASHBOARD_PAGE_ID) setPage('dashboard');
-    else return;
+  // Each table page has the layout it was saved with and the layout on screen; they differ when the page is dirty.
+  const [extraPages, setExtraPages] = useState<TablePage[]>([]);
+  const [saved, setSaved] = useState<Record<string, PageLayout>>(() => {
+    const story = (forPage: SpecimenPage): Partial<PageLayout> => ({
+      ...(initialPage === forPage && initialView ? { view: initialView } : {}),
+      ...(initialStatusDisplay ? { statusDisplay: initialStatusDisplay } : {}),
+    });
+    return {
+      [SHOTS_PAGE_ID]: layoutFromPage(baseShotsPage.page, { ...story('shots'), ...(initialFormats ? { formats: initialFormats } : {}) }),
+      [TASKS_PAGE_ID]: layoutFromPage(tasksPage.page, story('tasks')),
+    };
+  });
+  const [drafts, setDrafts] = useState<Record<string, PageLayout>>(saved);
+  const [pageId, setPageId] = useState(
+    initialPage === 'tasks' ? TASKS_PAGE_ID : initialPage === 'dashboard' ? DASHBOARD_PAGE_ID : SHOTS_PAGE_ID,
+  );
+  const shotsPage = withGrouping(withShotPatches(shotsEdited, shotPatches), drafts[SHOTS_PAGE_ID].grouping);
+  const tablePage = (id: string) =>
+    id === SHOTS_PAGE_ID ? shotsPage.page : id === TASKS_PAGE_ID ? tasksPage.page : extraPages.find((p) => p.id === id);
+  const current = tablePage(pageId);
+  const page: SpecimenPage = !current ? 'dashboard' : current.query.table === 'Task' ? 'tasks' : 'shots';
+  const draft = completeLayout(drafts[pageId] ?? drafts[SHOTS_PAGE_ID], current);
+  const update = (change: (layout: PageLayout) => Partial<PageLayout>) =>
+    setDrafts((all) => ({ ...all, [pageId]: { ...all[pageId], ...change(all[pageId]) } }));
+  const statusDisplay = (page === 'dashboard' ? drafts[SHOTS_PAGE_ID] : draft).statusDisplay;
+  const setStatusDisplay = (value: StatusDisplay) => update(() => ({ statusDisplay: value }));
+  const setView = (view: TableView) => update(() => ({ view }));
+  const setThumbSize = (thumbSize: number) => update(() => ({ thumbSize }));
+  const stepCardColumns = (delta: number) => update((l) => ({ cardColumns: clampColumns(l.cardColumns + delta) }));
+  const setZoom = (zoom: number) => update(() => ({ zoom }));
+  const onShotCommand = (command: 'copy' | 'export' | 'delete', shots: Shot[]) => {
+    if (command === 'copy') copyShots(shotsPage, shots, statusDisplay);
+    else if (command === 'export') exportShotsCsv(shotClip(shotsPage, shots, statusDisplay));
+    else setRecordConfirm({ kind: 'delete', shots });
+  };
+  const toggleCardBody = (code: string) =>
+    update((layout) => ({ cardBody: layout.cardBody.includes(code) ? layout.cardBody.filter((item) => item !== code) : [...layout.cardBody, code] }));
+  const toggleKanbanBody = (code: string) =>
+    update((layout) => {
+      const body = layout.kanbanBody ?? draft.kanbanBody ?? [];
+      return { kanbanBody: body.includes(code) ? body.filter((item) => item !== code) : [...body, code] };
+    });
+  const placeThumbField = (zone: 'inside' | 'below', code: string) =>
+    update((layout) => {
+      const on = (zone === 'inside' ? layout.thumbInside : layout.thumbBelow).includes(code);
+      return {
+        thumbInside: zone === 'inside' && !on ? [...layout.thumbInside.filter((item) => item !== code), code] : layout.thumbInside.filter((item) => item !== code),
+        thumbBelow: zone === 'below' && !on ? [...layout.thumbBelow.filter((item) => item !== code), code] : layout.thumbBelow.filter((item) => item !== code),
+      };
+    });
+  const columnProps = {
+    columnOrder: draft.columns,
+    columnWidths: draft.widths,
+    onColumnOrder: (columns: string[]) => update(() => ({ columns })),
+    onColumnWidth: (code: string, width: number) => update((l) => ({ widths: { ...l.widths, [code]: width } })),
+  };
+
+  const ganttProps = { layout: draft.gantt, onLayout: (gantt: GanttLayout) => update(() => ({ gantt })) };
+  const canFormat =
+    !!current && (current.shared ? permissionsFor(viewerId).createsSharedPages : current.ownerId === viewerId);
+  const canManageSchema = permissionsFor(viewerId).managesSchema;
+  const lockedField: EffectiveField = { code: 'locked', label: 'Locked', type: 'checkbox', system: true, hidden: false };
+  const manageFields = [
+    ...shotsPage.fields
+      .filter((field) => !removedFieldCodes.includes(field.code))
+      .map((field) => ({ ...field, ...fieldPatches[field.code] })),
+    ...customFields,
+    ...(canManageSchema ? [lockedField] : []),
+  ];
+  const taskFields = (resolveTableConfig('Task', PROJECT_ID)?.fields ?? []).map((field) => ({
+    ...field,
+    hidden: false,
+    ...fieldPatches[field.code],
+  }));
+  const fieldHasValue = (records: ReadonlyArray<object>, code: string) =>
+    records.some((record) => {
+      const value = (record as Record<string, unknown>)[code];
+      if (value == null || value === '') return false;
+      if (Array.isArray(value)) return value.length > 0;
+      return true;
+    });
+  const dropField = (code: string) => {
+    setRemovedFieldCodes((list) => (list.includes(code) ? list : [...list, code]));
+    setCustomFields((list) => list.filter((field) => field.code !== code));
+    update((layout) => ({
+      columns: layout.columns.filter((item) => item !== code),
+      cardBody: (layout.cardBody ?? []).filter((item) => item !== code),
+      thumbInside: (layout.thumbInside ?? []).filter((item) => item !== code),
+      thumbBelow: (layout.thumbBelow ?? []).filter((item) => item !== code),
+      kanbanBody: (layout.kanbanBody ?? []).filter((item) => item !== code),
+      grouping: (layout.grouping ?? []).filter((level) => level.field !== code),
+      taskGrouping: (layout.taskGrouping ?? []).filter((level) => level.field !== code),
+      ...(layout.kanbanField === code ? { kanbanField: 'status' } : {}),
+    }));
+  };
+  const gridPage = { ...shotsPage, fields: manageFields, fieldByCode: (code: string) => manageFields.find((field) => field.code === code) };
+  const projectScope = { level: 'project' as const, projectId: PROJECT_ID };
+  const projectFolders = folders.filter((f) => sameScope(f.scope, projectScope));
+  const folderLabel = (p: TablePage) =>
+    !p.shared ? 'Personal' : projectFolders.find((f) => f.id === p.folderId)?.name ?? 'The Last Lamplighter';
+  const tableConfig = resolveTableConfig(current?.query.table ?? 'Shot', PROJECT_ID);
+  const ganttIsTasks = draft.view === 'gantt' && current?.query.table !== 'Task' && !!tableConfig?.traits.hasTasks;
+  const fieldLabel = (code: string) => {
+    const taskLabels: Record<string, string> = {
+      departmentId: 'Department',
+      stepId: 'Pipeline step',
+      assigneeId: 'Assigned to',
+      entityId: current?.query.table === 'Asset' ? 'Asset' : current?.query.table === 'Shot' ? 'Shot' : 'Link',
+      startDate: 'Start',
+      dueDate: 'Due',
+      name: 'Task',
+    };
+    return taskLabels[code] ?? tableConfig?.fields.find((field) => field.code === code)?.label ?? code;
+  };
+  const groupFields = () => {
+    const config = resolveTableConfig(current?.query.table ?? 'Shot', PROJECT_ID);
+    const reserved = new Set(['id', 'createdAt', 'createdById', 'updatedAt', 'updatedById']);
+    const groupable = (config?.fields ?? []).filter((field) => !field.hidden && isGroupable(field.type) && !reserved.has(field.code));
+    const inColumns = draft.columns.map((code) => groupable.find((field) => field.code === code)).filter((field): field is NonNullable<typeof field> => !!field);
+    const rest = groupable.filter((field) => !draft.columns.includes(field.code)).sort((a, b) => a.label.localeCompare(b.label));
+    const fields = [...inColumns, ...rest].map((field) => ({ code: field.code, label: field.label }));
+    return current?.query.table === 'Task' ? [{ code: 'departmentId', label: 'Department' }, ...fields] : fields;
+  };
+
+  const saveCopy = (name: string, where: Pick<TablePage, 'shared' | 'folderId'>) => {
+    if (!current) return;
+    const id = `pg-session-${extraPages.length + 1}`;
+    setExtraPages((list) => [...list, pageWithLayout(current, draft, { id, name, ownerId: viewerId, ...where })]);
+    setSaved((all) => ({ ...all, [id]: draft }));
+    setDrafts((all) => ({ ...all, [id]: draft, [pageId]: saved[pageId] }));
+    setPageId(id);
+  };
+
+  const pageMenu = current && (
+    <PageMenu
+      pageName={current.name}
+      shared={current.shared}
+      ownerId={current.ownerId}
+      viewerId={viewerId}
+      changes={layoutChanges(completeLayout(saved[pageId], current), draft, fieldLabel)}
+      levelLabel="The Last Lamplighter"
+      folders={[{ id: '', label: 'The Last Lamplighter (top level)' }, ...projectFolders.map((f) => ({ id: f.id, label: f.name }))]}
+      defaultFolderId={current.folderId ?? ''}
+      onRevert={() => setDrafts((all) => ({ ...all, [pageId]: saved[pageId] }))}
+      onSave={() => setSaved((all) => ({ ...all, [pageId]: draft }))}
+      onSaveAs={(name, folderId) => saveCopy(name, { shared: true, folderId: folderId || undefined })}
+      onSaveToMyPages={(name) => saveCopy(name, { shared: false, folderId: undefined })}
+    />
+  );
+
+  const activePageId = detail?.kind === 'issue' ? 'pg-issues' : pageId;
+  const openPage = (id: string) => {
+    if (id !== DASHBOARD_PAGE_ID && !tablePage(id)) return;
+    setPageId(id);
     setDetail(null);
   };
 
@@ -213,72 +442,153 @@ export function Specimen({
           onBack={() => setDetail(null)}
           onNavigate={openShot}
           onOpenNote={(id) => setDetail({ kind: 'note', id })}
+          schemaFields={manageFields}
         />
       );
     }
     const controls =
-      shotsView === 'thumb' ? (
-        <ThumbSizeSlider size={thumbSize} onSize={setThumbSize} />
-      ) : shotsView === 'card' ? (
-        <CardColumnsPicker
-          columns={cardColumns}
-          onStep={(delta) =>
-            setCardColumns((current) => clampColumns(current + delta))
-          }
-        />
-      ) : shotsView === 'gantt' ? (
-        <GanttZoomSlider zoom={shotsZoom} onZoom={setShotsZoom} />
+      draft.view === 'thumb' ? (
+        <ThumbSizeSlider size={draft.thumbSize} onSize={setThumbSize} />
+      ) : draft.view === 'card' ? (
+        <CardColumnsPicker columns={draft.cardColumns} onStep={stepCardColumns} />
+      ) : draft.view === 'kanban' ? (
+        <>
+          <select
+            aria-label="Kanban field"
+            className="rounded-md border border-line-strong bg-surface-sunken px-2 text-sm text-fg outline-none"
+            style={{ height: 'var(--sgp-row-compact)' }}
+            value={draft.kanbanField}
+            onChange={(event) => update(() => ({ kanbanField: event.target.value }))}
+          >
+            {kanbanFields(shotsPage.fields).map((field) => (
+              <option key={field.code} value={field.code}>
+                {field.label}
+              </option>
+            ))}
+          </select>
+          <CardColumnsPicker
+            columns={draft.kanbanColumns}
+            min={KANBAN_COLUMNS.min}
+            max={KANBAN_COLUMNS.max}
+            countLabel="Kanban columns"
+            onStep={(delta) => update((layout) => ({ kanbanColumns: clampKanbanColumns((layout.kanbanColumns ?? 4) + delta) }))}
+          />
+        </>
+      ) : draft.view === 'gantt' ? (
+        <GanttZoomSlider zoom={draft.zoom} onZoom={setZoom} />
       ) : null;
     return (
       <>
         <PageHeader
-          title="Shots"
-          summary="11 shots in 3 sequences"
+          title={current?.name ?? 'Shots'}
+          folder={current ? folderLabel(current) : 'Production'}
+          pageMenu={pageMenu}
+          summary={
+            draft.grouping.length
+              ? `${shotsPage.allShots.length} shots grouped by ${groupingLabel(draft.grouping, fieldLabel)}`
+              : `${shotsPage.allShots.length} shots, not grouped`
+          }
           searchLabel="Search shots"
           addLabel="Shot"
           views={viewsFor('Shot', PROJECT_ID)}
-          view={shotsView}
-          onView={setShotsView}
+          view={draft.view}
+          onView={setView}
           controls={controls}
+          groupingLabel={groupingLabel(ganttIsTasks ? draft.taskGrouping : draft.grouping, fieldLabel) || undefined}
+          onGroup={() => setGroupOpen(true)}
+          onManageColumns={() => setColumnsOpen(true)}
         />
-        {shotsView === 'table' && (
+        {draft.view === 'table' && (
           <ShotGridSpecimen
             direction={direction}
             statusDisplay={statusDisplay}
-            shotsPage={shotsPage}
+            shotsPage={gridPage}
+            lockOf={(id) => locks[id] ?? 'open'}
+            onToggleLock={
+              canManageSchema
+                ? (id) =>
+                    setLocks((all) => {
+                      const currentLock = all[id] ?? 'open';
+                      if (currentLock === 'system') return all;
+                      const next = { ...all };
+                      if (currentLock === 'locked') delete next[id];
+                      else next[id] = 'locked';
+                      return next;
+                    })
+                : undefined
+            }
+            {...columnProps}
+            formats={[...draft.formats, ...projectFormats]}
             onOpenShot={openShot}
+            onEditShot={(id, patch) => setShotPatches((all) => ({ ...all, [id]: { ...all[id], ...patch } }))}
+            recordActions={recordActions}
             onColumnContextMenu={(event, field) =>
               setMenu({ x: event.clientX, y: event.clientY, field: field.code, label: field.label })
             }
           />
         )}
-        {shotsView === 'card' && (
+        {draft.view === 'card' && (
           <ShotCardsView
             direction={direction}
             statusDisplay={statusDisplay}
-            columns={cardColumns}
+            columns={draft.cardColumns}
             onOpenShot={openShot}
-            shotsPage={shotsPage}
+            shotsPage={gridPage}
+            recordActions={recordActions}
+            formats={[...draft.formats, ...projectFormats]}
+            bodyFields={draft.cardBody}
+            onToggleBody={toggleCardBody}
+            onCommand={onShotCommand}
           />
         )}
-        {shotsView === 'thumb' && (
+        {draft.view === 'thumb' && (
           <ShotThumbsView
             direction={direction}
             statusDisplay={statusDisplay}
-            size={thumbSize}
+            size={draft.thumbSize}
             onOpenShot={openShot}
-            shotsPage={shotsPage}
+            shotsPage={gridPage}
+            recordActions={recordActions}
+            formats={[...draft.formats, ...projectFormats]}
+            insideFields={draft.thumbInside}
+            belowFields={draft.thumbBelow}
+            onPlace={placeThumbField}
+            onCommand={onShotCommand}
           />
         )}
-        {shotsView === 'gantt' && (
+        {draft.view === 'kanban' && (
+          <ShotKanbanView
+            direction={direction}
+            statusDisplay={statusDisplay}
+            fieldCode={draft.kanbanField}
+            visibleColumns={draft.kanbanColumns}
+            onOpenShot={openShot}
+            shotsPage={gridPage}
+            recordActions={recordActions}
+            formats={[...draft.formats, ...projectFormats]}
+            bodyFields={draft.kanbanBody}
+            onToggleBody={toggleKanbanBody}
+            onCommand={onShotCommand}
+          />
+        )}
+        {draft.view === 'gantt' && (
           <>
-            <GanttScope text="This gantt shows the Tasks of these shots, grouped by Shot, then Step. Bars run from each task's Start to Due." />
+            <GanttScope
+              text={
+                draft.taskGrouping.length
+                  ? `This gantt shows the Tasks of these shots, grouped by ${groupingLabel(draft.taskGrouping, fieldLabel)}. Bars run from each task's Start to Due.`
+                  : "This gantt shows the Tasks of these shots, not grouped. Bars run from each task's Start to Due."
+              }
+            />
             <TasksGantt
               direction={direction}
               statusDisplay={statusDisplay}
-              zoom={shotsZoom}
+              zoom={draft.zoom}
               taskList={allTasks.filter((t) => t.entityType === 'Shot' && shotsPage.allShots.some((s) => s.id === t.entityId))}
-              grouping="shot"
+              formats={[...draft.formats, ...projectFormats]}
+              {...ganttGroupingProps(draft.taskGrouping, true)}
+              {...ganttProps}
+              onColumnContextMenu={(event, column) => setMenu({ x: event.clientX, y: event.clientY, field: column.code, label: column.label })}
             />
           </>
         )}
@@ -292,35 +602,65 @@ export function Specimen({
     return (
       <>
         <PageHeader
-          title="Tasks"
-          summary={`${topLevel} tasks and ${subTasks} sub-tasks by department and step`}
+          title={current?.name ?? 'Tasks'}
+          folder={current ? folderLabel(current) : 'Production'}
+          pageMenu={pageMenu}
+          summary={
+            draft.grouping.length
+              ? `${topLevel} tasks and ${subTasks} sub-tasks, grouped by ${groupingLabel(draft.grouping, fieldLabel)}`
+              : `${topLevel} tasks and ${subTasks} sub-tasks, not grouped`
+          }
           searchLabel="Search tasks"
           addLabel="Task"
           views={viewsFor('Task', PROJECT_ID)}
-          view={tasksView}
-          onView={setTasksView}
+          view={draft.view}
+          onView={setView}
+          groupingLabel={groupingLabel(draft.grouping, fieldLabel) || undefined}
+          onGroup={() => setGroupOpen(true)}
+          onManageColumns={() => setColumnsOpen(true)}
           controls={
-            tasksView === 'gantt' ? (
-              <GanttZoomSlider zoom={tasksZoom} onZoom={setTasksZoom} />
-            ) : tasksView === 'card' ? (
-              <CardColumnsPicker columns={cardColumns} onStep={(delta) => setCardColumns((c) => clampColumns(c + delta))} />
-            ) : tasksView === 'thumb' ? (
-              <ThumbSizeSlider size={thumbSize} onSize={setThumbSize} />
+            draft.view === 'gantt' ? (
+              <GanttZoomSlider zoom={draft.zoom} onZoom={setZoom} />
+            ) : draft.view === 'card' ? (
+              <CardColumnsPicker columns={draft.cardColumns} onStep={stepCardColumns} />
+            ) : draft.view === 'thumb' ? (
+              <ThumbSizeSlider size={draft.thumbSize} onSize={setThumbSize} />
             ) : null
           }
         />
-        {tasksView === 'table' && <TasksTable direction={direction} statusDisplay={statusDisplay} />}
-        {tasksView === 'gantt' && (
+        {draft.view === 'table' && (
+          <TasksTable
+            direction={direction}
+            statusDisplay={statusDisplay}
+            levels={draft.grouping}
+            onColumnContextMenu={(event, column) => setMenu({ x: event.clientX, y: event.clientY, field: column.code, label: column.label })}
+            {...columnProps}
+          />
+        )}
+        {draft.view === 'gantt' && (
           <>
-            <GanttScope text="Tasks grouped by Department, then Step. Bars run from each task's Start to Due." />
-            <TasksGantt direction={direction} statusDisplay={statusDisplay} zoom={tasksZoom} />
+            <GanttScope
+              text={
+                draft.grouping.length
+                  ? `Tasks grouped by ${groupingLabel(draft.grouping, fieldLabel)}. Bars run from each task's Start to Due.`
+                  : "Tasks, not grouped. Bars run from each task's Start to Due."
+              }
+            />
+            <TasksGantt
+              direction={direction}
+              statusDisplay={statusDisplay}
+              zoom={draft.zoom}
+              levels={draft.grouping}
+              {...ganttProps}
+              onColumnContextMenu={(event, column) => setMenu({ x: event.clientX, y: event.clientY, field: column.code, label: column.label })}
+            />
           </>
         )}
-        {tasksView === 'card' && (
-          <RecordCards spec={taskSpec(tasksPage.projectTasks, { direction, statusDisplay }, { showLink: true })} columns={cardColumns} />
+        {draft.view === 'card' && (
+          <RecordCards spec={taskSpec(tasksPage.projectTasks, { direction, statusDisplay }, { showLink: true })} columns={draft.cardColumns} grouping={draft.grouping} />
         )}
-        {tasksView === 'thumb' && (
-          <RecordThumbs spec={taskSpec(tasksPage.projectTasks, { direction, statusDisplay }, { showLink: true })} size={thumbSize} />
+        {draft.view === 'thumb' && (
+          <RecordThumbs spec={taskSpec(tasksPage.projectTasks, { direction, statusDisplay }, { showLink: true })} size={draft.thumbSize} grouping={draft.grouping} />
         )}
       </>
     );
@@ -331,11 +671,13 @@ export function Specimen({
       className={`sgp-dir-${direction.id} sgp-theme-${theme} overflow-hidden rounded-lg border border-line bg-canvas font-sans text-md text-fg`}
       style={{ colorScheme: theme }}
     >
-      <TopBar />
+      <TopBar viewerId={viewerId} />
       <div className="relative flex" style={{ height }}>
         <NavTreeSpecimen
           activePageId={activePageId}
           onOpenPage={openPage}
+          viewerId={viewerId}
+          extraPages={extraPages}
           mode={navMode}
           overlayOpen={navOpen}
           onToggleDock={() => {
@@ -344,7 +686,17 @@ export function Specimen({
           }}
           onToggleOverlay={() => setNavOpen(!navOpen)}
         />
-        <main className="flex min-w-0 flex-1 flex-col" onMouseDown={() => navMode === 'undocked' && setNavOpen(false)}>
+        <main
+          className="flex min-w-0 flex-1 flex-col"
+          onMouseDown={() => navMode === 'undocked' && setNavOpen(false)}
+          onContextMenu={(event) => {
+            const target = event.target as HTMLElement;
+            if (target.closest('[data-record-surface], [role=columnheader], [role=separator], [role=menu], [role=dialog], nav, button, a, input, textarea, select')) return;
+            if (!copiedShots) return;
+            event.preventDefault();
+            setShotMenu({ kind: 'paste', x: event.clientX, y: event.clientY });
+          }}
+        >
           {detail?.kind === 'issue' || page === 'shots'
             ? shotsContent()
             : page === 'tasks'
@@ -361,7 +713,206 @@ export function Specimen({
             columnLabel={menu.label}
             statusDisplay={menu.field === 'status' ? statusDisplay : undefined}
             onStatusDisplay={menu.field === 'status' ? setStatusDisplay : undefined}
+            onConditionalFormat={canFormat ? () => setFormatColumn(menu.field) : undefined}
+            conditionalFormatBlocked={
+              canFormat ? undefined : 'Your permissions don\'t allow formats on this shared page. Save into My Pages to format your own copy.'
+            }
+            onManageColumns={() => setColumnsOpen(true)}
+            onConfigureField={() =>
+              setConfigure({
+                code: menu.field,
+                table: page === 'tasks' || draft.view === 'gantt' ? 'Task' : 'Shot',
+              })
+            }
             onClose={closeMenu}
+          />
+        </div>
+      )}
+      {shotMenu && (
+        <RecordActionMenu
+          x={shotMenu.x}
+          y={shotMenu.y}
+          mode={shotMenu.kind === 'paste' ? 'paste' : 'records'}
+          count={shotMenu.kind === 'paste' ? (copiedShots?.records.length ?? 0) : shotMenu.shots.length}
+          onClose={() => setShotMenu(null)}
+          onCopy={
+            shotMenu.kind === 'records'
+              ? () => {
+                  copyShots(shotsPage, shotMenu.shots, statusDisplay);
+                  setShotMenu(null);
+                }
+              : undefined
+          }
+          onExport={
+            shotMenu.kind === 'records'
+              ? () => {
+                  exportShotsCsv(shotClip(shotsPage, shotMenu.shots, statusDisplay));
+                  setShotMenu(null);
+                }
+              : undefined
+          }
+          onDelete={
+            shotMenu.kind === 'records'
+              ? () => {
+                  setRecordConfirm({ kind: 'delete', shots: shotMenu.shots });
+                  setShotMenu(null);
+                }
+              : undefined
+          }
+          onPaste={
+            shotMenu.kind === 'paste'
+              ? () => {
+                  setRecordConfirm({ kind: 'paste' });
+                  setShotMenu(null);
+                }
+              : undefined
+          }
+        />
+      )}
+      {recordConfirm?.kind === 'delete' && (
+        <DeleteRecordsDialog
+          count={recordConfirm.shots.length}
+          noun="shot"
+          onClose={() => setRecordConfirm(null)}
+          onConfirm={() => {
+            const ids = recordConfirm.shots.map((s) => s.id);
+            setRemovedShotIds((list) => [...list, ...ids]);
+            setRecordConfirm(null);
+          }}
+        />
+      )}
+      {recordConfirm?.kind === 'paste' && copiedShots && (
+        <PasteRecordsDialog
+          preview={planPaste(copiedShots.records, shotsPage.allShots, shotsPage, viewerId).preview}
+          noun="shot"
+          uniqueLabels={shotsPage.fields.filter((f) => f.unique).map((f) => f.label)}
+          onClose={() => setRecordConfirm(null)}
+          onConfirm={() => {
+            setAddedShots((list) => [...list, ...planPaste(copiedShots.records, shotsPage.allShots, shotsPage, viewerId).shots]);
+            setRecordConfirm(null);
+          }}
+        />
+      )}
+      {columnsOpen && current && page !== 'dashboard' && (
+        <ManageColumnsDialog
+          tableLabel={current.name}
+          fields={page === 'shots' ? manageFields : taskFields}
+          shown={draft.columns}
+          canManage={canManageSchema}
+          hasData={(code) => fieldHasValue(page === 'shots' ? shotsPage.allShots : tasksPage.projectTasks, code)}
+          onFormula={(code, formula) => {
+            if (code.startsWith('cf-')) {
+              setCustomFields((list) => list.map((item) => (item.code === code ? { ...item, formula } : item)));
+              return;
+            }
+            setFieldPatches((prev) => ({ ...prev, [code]: { ...prev[code], formula } }));
+          }}
+          onApply={(shown, fields) => {
+            const dropped =
+              page === 'shots'
+                ? [
+                    ...shotsPage.fields.filter((field) => !field.system && !fields.some((item) => item.code === field.code)).map((field) => field.code),
+                    ...customFields.filter((field) => !fields.some((item) => item.code === field.code)).map((field) => field.code),
+                  ]
+                : [];
+            update((layout) => ({
+              columns: shown,
+              cardBody: (layout.cardBody ?? []).filter((code) => !dropped.includes(code)),
+              thumbInside: (layout.thumbInside ?? []).filter((code) => !dropped.includes(code)),
+              thumbBelow: (layout.thumbBelow ?? []).filter((code) => !dropped.includes(code)),
+              kanbanBody: (layout.kanbanBody ?? []).filter((code) => !dropped.includes(code)),
+              grouping: (layout.grouping ?? []).filter((level) => !dropped.includes(level.field)),
+              taskGrouping: (layout.taskGrouping ?? []).filter((level) => !dropped.includes(level.field)),
+              ...(layout.kanbanField && dropped.includes(layout.kanbanField) ? { kanbanField: 'status' } : {}),
+            }));
+            setFieldPatches((prev) => ({
+              ...prev,
+              ...Object.fromEntries(
+                fields
+                  .filter((field) => !field.code.startsWith('cf-') && field.code !== 'locked')
+                  .map((field) => [field.code, { unique: field.unique, formula: field.formula }]),
+              ),
+            }));
+            if (page === 'shots') {
+              setCustomFields(fields.filter((field) => field.code.startsWith('cf-')));
+              setRemovedFieldCodes(dropped.filter((code) => shotsPage.fields.some((field) => field.code === code)));
+            }
+            setColumnsOpen(false);
+          }}
+          onClose={() => setColumnsOpen(false)}
+        />
+      )}
+      {configure &&
+        (() => {
+          const fields = configure.table === 'Shot' ? manageFields : taskFields;
+          const field = fields.find((item) => item.code === configure.code);
+          if (!field) return null;
+          const records = configure.table === 'Shot' ? shotsPage.allShots : tasksPage.projectTasks;
+          return (
+            <ConfigureFieldDialog
+              field={field}
+              fields={fields}
+              canManage={canManageSchema}
+              hasData={fieldHasValue(records, field.code)}
+              onSave={(next) => {
+                if (next.code.startsWith('cf-')) {
+                  setCustomFields((list) => list.map((item) => (item.code === next.code ? next : item)));
+                  return;
+                }
+                setFieldPatches((prev) => ({
+                  ...prev,
+                  [next.code]: { ...prev[next.code], unique: next.unique, formula: next.formula },
+                }));
+              }}
+              onDelete={
+                configure.table === 'Shot' && !field.system
+                  ? () => {
+                      dropField(field.code);
+                      setConfigure(null);
+                    }
+                  : undefined
+              }
+              onClose={() => setConfigure(null)}
+            />
+          );
+        })()}
+      {groupOpen && current && page !== 'dashboard' && (
+        <GroupDialog
+          key={ganttIsTasks ? 'gantt' : 'records'}
+          levels={ganttIsTasks ? draft.taskGrouping : draft.grouping}
+          fields={ganttIsTasks ? taskGroupFields(current?.query.table === 'Asset' ? 'Asset' : 'Shot') : groupFields()}
+          savedWithPage
+          note={
+            ganttIsTasks
+              ? 'This gantt is the tasks of these records. Its grouping stays with the gantt and does not change how the table, cards, or thumbnails are grouped.'
+              : page === 'shots'
+                ? 'This grouping is for these shots. It stays when you switch between table, cards, and thumbnails, and it does not change the gantt.'
+                : 'This grouping is for these tasks. It stays when you switch between table, cards, thumbnails, and gantt.'
+          }
+          onApply={(levels) => update(() => (ganttIsTasks ? { taskGrouping: levels } : { grouping: levels }))}
+          onClose={() => setGroupOpen(false)}
+        />
+      )}
+      {formatColumn && current && page === 'shots' && (
+        <div className={`sgp-dir-${direction.id} sgp-theme-${theme} font-sans text-md`} style={{ colorScheme: theme }}>
+          <ConditionalFormatDialog
+            pageName={current.name}
+            noun="shots"
+            tableLabel="Shots"
+            projectName="The Last Lamplighter"
+            projectRules={projectFormats}
+            canEditProject={permissionsFor(viewerId).managesSchema}
+            fields={shotsPage.fields}
+            columns={draft.columns.map(shotsPage.fieldByCode).filter((f): f is NonNullable<typeof f> => !!f)}
+            records={shotsPage.allShots as unknown as Array<Record<string, unknown>>}
+            recordLabel={(r) => String(r.code)}
+            rules={draft.formats}
+            startColumn={formatColumn}
+            onApply={(formats, project) => {
+              update(() => ({ formats }));
+              setProjectFormats(project);
+            }}
+            onClose={() => setFormatColumn(null)}
           />
         </div>
       )}

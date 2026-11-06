@@ -9,6 +9,8 @@ import {
   shots,
   tasks,
   versions,
+  type EffectiveField,
+  type GroupLevel,
   type Shot,
   type StatusDisplay,
 } from '@sgp/mock-data';
@@ -170,24 +172,25 @@ function NewNoteDialog({ shot, onClose }: { shot: Shot; onClose: () => void }) {
   );
 }
 
-function ShotInfo({ shot, direction }: { shot: Shot; direction: Direction }) {
+function ShotInfo({ shot, direction, schemaFields }: { shot: Shot; direction: Direction; schemaFields?: EffectiveField[] }) {
   const config = resolveTableConfig('Shot', shot.projectId)!;
   const sequence = sequences.find((s) => s.id === shot.sequenceId)!;
   const project = projects.find((p) => p.id === shot.projectId);
   const [showHidden, setShowHidden] = useState(false);
   const hiddenCount = config.fields.filter((f) => f.hidden).length;
-  const fields = config.fields.filter((f) => showHidden || !f.hidden);
+  const fields = (schemaFields ?? config.fields).filter((f) => showHidden || !f.hidden);
 
   const value = (f: (typeof config.fields)[number]) => {
     const raw = shot[f.code as keyof Shot];
     if (f.code === 'projectId') return project?.name ?? '-';
     if (f.code === 'sequenceId') return `${sequence.code} ${sequence.name}`;
     if (f.code === 'assetIds') return assetNames(shot.assetIds, 10);
+    if (f.type === 'media') return <span className="block aspect-video w-16 rounded-sm" style={{ background: placeholderThumb(shot.code) }} />;
     if (raw === undefined || raw === null || raw === '') return <span className="text-fg-subtle">-</span>;
     if (f.type === 'user') return <PersonChip personId={String(raw)} />;
     if (f.type === 'date' && String(raw).includes('T')) return formatDateTime(String(raw));
     if (f.code === 'id') return <span className="font-mono text-xs">{String(raw)}</span>;
-    return <ShotCell field={f} shot={shot} direction={direction} statusDisplay="long" />;
+    return <ShotCell field={f} shot={shot} direction={direction} statusDisplay="long" fields={schemaFields} />;
   };
 
   return (
@@ -231,6 +234,7 @@ export function ShotDetail({
   onBack,
   onNavigate,
   onOpenNote,
+  schemaFields,
 }: {
   shotId: string;
   direction: Direction;
@@ -239,14 +243,19 @@ export function ShotDetail({
   onBack: () => void;
   onNavigate: (shotId: string) => void;
   onOpenNote: (noteId: string) => void;
+  /** Live field definitions, including a formula saved in this session. */
+  schemaFields?: EffectiveField[];
 }) {
   const shot = shots.find((s) => s.id === shotId)!;
   const sequence = sequences.find((s) => s.id === shot.sequenceId)!;
   const config = resolveTableConfig('Shot', shot.projectId)!;
-  const field = (code: string) => config.fields.find((f) => f.code === code && !f.hidden);
+  const field = (code: string) => schemaFields?.find((f) => f.code === code) ?? config.fields.find((f) => f.code === code && !f.hidden);
   const data = shotData(shot);
   const [tab, setTab] = useState<ShotTab>(initialTab);
   const [composing, setComposing] = useState(false);
+  const [groupings, setGroupings] = useState<Partial<Record<ShotTab, GroupLevel[]>>>({});
+  const groupingFor = (id: ShotTab) => groupings[id] ?? [];
+  const setGroupingFor = (id: ShotTab) => (levels: GroupLevel[]) => setGroupings((all) => ({ ...all, [id]: levels }));
   const projectShots = shots.filter((s) => s.projectId === shot.projectId);
   const index = projectShots.findIndex((s) => s.id === shot.id);
   const topTasks = data.shotTasks.filter((t) => !t.parentTaskId);
@@ -323,7 +332,7 @@ export function ShotDetail({
                 if (!f) return null;
                 return (
                   <Field key={code} label={f.label} calculated={f.type === 'calculated'}>
-                    <ShotCell field={f} shot={shot} direction={direction} statusDisplay={statusDisplay} />
+                    <ShotCell field={f} shot={shot} direction={direction} statusDisplay={statusDisplay} fields={schemaFields} />
                   </Field>
                 );
               })}
@@ -354,22 +363,63 @@ export function ShotDetail({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-        {tab === 'activity' && <RecordPage spec={activitySpec(data.activity)} direction={direction} />}
+        {tab === 'activity' && (
+          <RecordPage
+            spec={activitySpec(data.activity)}
+            direction={direction}
+            grouping={groupingFor('activity')}
+            onGrouping={setGroupingFor('activity')}
+            groupNote="This is the activity for this shot. Its grouping is separate from the Shots page, and it stays as you switch this tab's views."
+          />
+        )}
 
-        {tab === 'info' && <ShotInfo shot={shot} direction={direction} />}
+        {tab === 'info' && <ShotInfo shot={shot} direction={direction} schemaFields={schemaFields} />}
 
         {tab === 'tasks' && (
-          <RecordPage spec={{ ...taskSpec(data.shotTasks, ctx), defaultView: 'gantt' }} direction={direction} />
+          <RecordPage
+            spec={{ ...taskSpec(data.shotTasks, ctx), defaultView: 'gantt' }}
+            direction={direction}
+            grouping={groupingFor('tasks')}
+            onGrouping={setGroupingFor('tasks')}
+            groupNote="These are the tasks linked to this shot. Their grouping is separate from the Shots page, uses task fields, and stays when you switch this tab between table, cards, thumbnails, and gantt."
+          />
         )}
-        {tab === 'versions' && <RecordPage spec={versionSpec(data.shotVersions, ctx)} direction={direction} />}
+        {tab === 'versions' && (
+          <RecordPage
+            spec={versionSpec(data.shotVersions, ctx)}
+            direction={direction}
+            grouping={groupingFor('versions')}
+            onGrouping={setGroupingFor('versions')}
+            groupNote="These are the versions linked to this shot. Their grouping is separate from the Shots page, and it stays as you switch this tab's views."
+          />
+        )}
         {tab === 'notes' && (
           <RecordPage
             spec={noteSpec(data.threads, ctx, { onAdd: () => setComposing(true), onOpen: (n) => onOpenNote(n.id) })}
             direction={direction}
+            grouping={groupingFor('notes')}
+            onGrouping={setGroupingFor('notes')}
+            groupNote="These are the notes linked to this shot. Their grouping is separate from the Shots page, and it stays as you switch this tab's views."
           />
         )}
-        {tab === 'publishes' && <RecordPage spec={publishSpec()} direction={direction} />}
-        {tab === 'assets' && <RecordPage spec={assetSpec(data.linkedAssets, ctx)} direction={direction} />}
+        {tab === 'publishes' && (
+          <RecordPage
+            spec={publishSpec()}
+            direction={direction}
+            grouping={groupingFor('publishes')}
+            onGrouping={setGroupingFor('publishes')}
+            groupNote="Publishes for this shot have their own grouping, separate from the Shots page."
+          />
+        )}
+        {tab === 'assets' && (
+          <RecordPage
+            spec={assetSpec(data.linkedAssets, ctx)}
+            direction={direction}
+            grouping={groupingFor('assets')}
+            onGrouping={setGroupingFor('assets')}
+            groupNote="These are the assets linked to this shot. Their grouping is separate from the Shots page, and it stays as you switch this tab's views."
+          />
+        )}
       </div>
 
       {composing && <NewNoteDialog shot={shot} onClose={() => setComposing(false)} />}

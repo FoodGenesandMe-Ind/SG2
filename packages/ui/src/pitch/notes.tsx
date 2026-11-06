@@ -1,18 +1,14 @@
 import { versions, type Note } from '@sgp/mock-data';
 import { placeholderThumb } from './color';
+import { formatDate } from './dates';
 import type { Direction } from './directions';
 import { Icon } from './Icon';
 import { Avatar, personName } from './people';
 import { StatusPill } from './StatusPill';
 
 export function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'UTC',
-  });
+  const time = new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+  return `${formatDate(new Date(iso).toISOString().slice(0, 10))}, ${time}`;
 }
 
 export function noteSubject(note: Note) {

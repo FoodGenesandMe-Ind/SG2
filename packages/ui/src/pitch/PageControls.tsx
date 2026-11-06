@@ -4,6 +4,7 @@ import { VIEW_ICON, VIEW_LABEL } from './shotsPage';
 
 export const THUMB_SIZE = { min: 96, max: 384, step: 8 };
 export const CARD_COLUMNS = { min: 1, max: 10 };
+export const KANBAN_COLUMNS = { min: 1, max: 20 };
 
 const rowHeight = { height: 'var(--sgp-row-compact)' };
 
@@ -54,7 +55,19 @@ export function ThumbSizeSlider({ size, onSize }: { size: number; onSize: (size:
   );
 }
 
-export function CardColumnsPicker({ columns, onStep }: { columns: number; onStep: (delta: number) => void }) {
+export function CardColumnsPicker({
+  columns,
+  onStep,
+  min = CARD_COLUMNS.min,
+  max = CARD_COLUMNS.max,
+  countLabel = 'Card columns',
+}: {
+  columns: number;
+  onStep: (delta: number) => void;
+  min?: number;
+  max?: number;
+  countLabel?: string;
+}) {
   const button =
     'flex h-full w-6 items-center justify-center text-fg-muted hover:bg-row-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent';
   return (
@@ -62,13 +75,13 @@ export function CardColumnsPicker({ columns, onStep }: { columns: number; onStep
       <span className="flex items-center gap-1 px-2 text-fg-subtle">
         <Icon name="columns-3" size={13} /> Columns
       </span>
-      <button className={button} aria-label="Fewer columns" disabled={columns <= CARD_COLUMNS.min} onClick={() => onStep(-1)}>
+      <button className={button} aria-label="Fewer columns" disabled={columns <= min} onClick={() => onStep(-1)}>
         <Icon name="minus" size={12} />
       </button>
-      <span role="status" aria-label="Card columns" className="w-6 text-center font-medium tabular-nums">
+      <span role="status" aria-label={countLabel} className="w-8 text-center font-medium tabular-nums">
         {columns}
       </span>
-      <button className={button} aria-label="More columns" disabled={columns >= CARD_COLUMNS.max} onClick={() => onStep(1)}>
+      <button className={button} aria-label="More columns" disabled={columns >= max} onClick={() => onStep(1)}>
         <Icon name="plus" size={12} />
       </button>
     </div>
@@ -76,6 +89,7 @@ export function CardColumnsPicker({ columns, onStep }: { columns: number; onStep
 }
 
 export const clampColumns = (n: number) => Math.min(CARD_COLUMNS.max, Math.max(CARD_COLUMNS.min, n));
+export const clampKanbanColumns = (n: number) => Math.min(KANBAN_COLUMNS.max, Math.max(KANBAN_COLUMNS.min, n));
 
 export function SearchField({ label }: { label: string }) {
   return (
