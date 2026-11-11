@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { MONTH_NAMES } from './dates';
 import { TODAY } from './Gantt';
 import { Icon } from './Icon';
+import { Popover } from './Popover';
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const MARGIN = 8;
@@ -64,6 +65,7 @@ export function DatePicker({
   const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
 
   return (
+    <Popover anchorRef={anchorRef}>
     <div
       ref={boxRef}
       role="dialog"
@@ -128,5 +130,6 @@ export function DatePicker({
         </button>
       </div>
     </div>
+    </Popover>
   );
 }

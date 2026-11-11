@@ -148,6 +148,7 @@ export const pages: Page[] = [
       table: 'Shot',
       filters: [{ field: 'projectId', op: 'is', value: LMP }],
       groupBy: 'sequenceId',
+      sort: [{ field: 'code', direction: 'asc' }],
       columns: ['image', 'code', 'status', 'description', 'frameIn', 'frameOut', 'totalFrames', 'dueDate', 'animationDue', 'assetIds'],
     },
     columnSettings: {

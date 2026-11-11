@@ -34,7 +34,7 @@ function Section({ step, title, hint, children }: { step: number; title: string;
   );
 }
 
-function ColorRow({ label, value, onChange }: { label: string; value?: string; onChange: (value?: string) => void }) {
+export function ColorRow({ label, value, onChange }: { label: string; value?: string; onChange: (value?: string) => void }) {
   const custom = value && !PALETTE.some((p) => p.value === value) ? value : undefined;
   const swatch = (active: boolean) => `size-5 shrink-0 rounded-sm ring-offset-1 ring-offset-surface-raised ${active ? 'ring-2 ring-fg' : 'hover:ring-1 hover:ring-line-strong'}`;
   return (
@@ -183,7 +183,7 @@ function ValueEditor({
   );
 }
 
-function ConditionRow({
+export function ConditionRow({
   condition,
   fields,
   onChange,
@@ -238,7 +238,7 @@ function ConditionRow({
 }
 
 /** A small sample of what the format looks like, for the rule list and the preview. */
-function Sample({ style, children }: { style: FormatStyle; children: ReactNode }) {
+export function Sample({ style, children }: { style: FormatStyle; children: ReactNode }) {
   return (
     <span className={`inline-flex items-center rounded-sm px-1.5 text-sm text-fg ${formatClass(style)}`} style={styleCss(style)}>
       {children}

@@ -1,11 +1,18 @@
 import type { EffectiveField, Expr } from '@sgp/mock-data';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useReorder } from './reorder';
 
 const height = { height: 'var(--sgp-row-compact)' };
 
 /** The name a formula uses for a field, from its label: "Cut in" → cut_in. */
 export function systemName(label: string): string {
   return label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'field';
+}
+
+/** A field's system name. A record's own name field is named for its table, as in shot_name and task_name. */
+export function fieldSystemName(field: { code: string; label: string }): string {
+  const base = systemName(field.label);
+  return (field.code === 'code' || field.code === 'name') && base !== 'name' && base !== 'code' ? `${base}_name` : base;
 }
 
 type Operator = '(' | ')' | '+' | '-' | '*' | '/' | '>' | '<' | '=' | '!=' | '>=' | '<=';
@@ -360,12 +367,12 @@ export function FormulaEditor({
   const names = new Map<string, string>();
   for (const field of fields) {
     if (field.code === selfCode || !ELIGIBLE.has(field.type)) continue;
-    const name = systemName(field.label);
+    const name = fieldSystemName(field);
     if (!names.has(name)) names.set(name, field.code);
   }
   const nameOf = (code: string) => {
     const field = fields.find((item) => item.code === code);
-    return field ? systemName(field.label) : code;
+    return field ? fieldSystemName(field) : code;
   };
   const known = new Set(fields.map((item) => item.code));
   const knownKey = fields.map((item) => item.code).join('|');
@@ -376,6 +383,20 @@ export function FormulaEditor({
   const [caret, setCaret] = useState(initial.length);
   const [selected, setSelected] = useState<string | null>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  // A press on a chip that does not move places the cursor beside it and selects it; a drag moves it.
+  const pressRef = useRef<{ index: number; before: boolean } | null>(null);
+  const chipReorder = useReorder({
+    ids: chips.map((chip) => chip.id),
+    axis: 'wrap',
+    threshold: 4,
+    onReorder: (ids) => setChips((current) => ids.map((id) => current.find((chip) => chip.id === id)!).filter(Boolean)),
+    onClick: (id) => {
+      const press = pressRef.current;
+      if (!press) return;
+      placeCaret(press.before ? press.index : press.index + 1);
+      setSelected(id);
+    },
+  });
   const inputRef = useRef<HTMLInputElement>(null);
   const caretRef = useRef(initial.length);
   caretRef.current = caret;
@@ -458,37 +479,9 @@ export function FormulaEditor({
 
   const onChipPointerDown = (event: ReactPointerEvent<HTMLElement>, id: string, index: number) => {
     if (!canManage) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const origin = event.clientX;
-    const chipWidth = event.currentTarget.getBoundingClientRect();
-    let moved = false;
-    const move = (pointer: PointerEvent) => {
-      if (Math.abs(pointer.clientX - origin) < 4) return;
-      moved = true;
-      const nodes = [...(rowRef.current?.querySelectorAll<HTMLElement>('[data-chip]') ?? [])];
-      const over = nodes.findIndex((node) => pointer.clientX < node.getBoundingClientRect().left + node.getBoundingClientRect().width / 2);
-      setChips((current) => {
-        const from = current.findIndex((chip) => chip.id === id);
-        if (from < 0) return current;
-        const target = over < 0 ? current.length - 1 : over > from ? over - 1 : over;
-        if (target === from) return current;
-        const next = [...current];
-        const [item] = next.splice(from, 1);
-        next.splice(target, 0, item!);
-        return next;
-      });
-    };
-    const up = (pointer: PointerEvent) => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      if (moved) return;
-      const before = pointer.clientX < chipWidth.left + chipWidth.width / 2;
-      placeCaret(before ? index : index + 1);
-      setSelected(id);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    const box = event.currentTarget.getBoundingClientRect();
+    pressRef.current = { index, before: event.clientX < box.left + box.width / 2 };
+    chipReorder.startDrag(id, event);
   };
 
   const onInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -560,8 +553,11 @@ export function FormulaEditor({
         Example: <span className="font-mono text-fg-muted">if cut_in &gt; cut_out then cut_in else cut_out</span>
       </p>
       <div
-        ref={rowRef}
-        className="flex min-h-16 flex-wrap items-center gap-1 rounded-md border border-line-strong bg-surface-sunken p-2"
+        ref={(node) => {
+          rowRef.current = node;
+          chipReorder.listRef.current = node;
+        }}
+        className="relative flex min-h-16 flex-wrap items-center gap-1 rounded-md border border-line-strong bg-surface-sunken p-2"
         onMouseDown={(event) => {
           if (!canManage) return;
           if ((event.target as HTMLElement).closest('[data-chip], [data-caret], input')) return;
@@ -594,14 +590,16 @@ export function FormulaEditor({
             }}
           />
         ))}
+        {chipReorder.indicator}
         {chips.map((chip, index) => (
           <span
             key={chip.id}
             data-chip={chip.id}
+            {...chipReorder.itemProps(chip.id)}
             style={{ order: index * 2 + 1, ...height }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => onChipPointerDown(event, chip.id, index)}
-            className={`inline-flex cursor-grab items-center gap-1 rounded-sm px-1.5 font-mono text-xs ${
+            className={`inline-flex cursor-grab items-center gap-1 rounded-sm px-1.5 font-mono text-xs transition-opacity ${chipReorder.dimClass(chip.id)} ${
               chip.kind === 'error' ? 'bg-danger text-fg-inverse' : wordChip(chip) ? 'bg-accent-subtle text-fg' : 'text-fg'
             } ${selected === chip.id ? 'outline outline-2 outline-accent' : ''}`}
           >
@@ -682,7 +680,7 @@ export function FormulaEditor({
           onMouseDown={(event) => event.preventDefault()}
           onClick={saveFormula}
         >
-          Save
+          Save formula
         </button>
         {preview.some((chip) => chip.kind === 'error') && <span className="text-xs text-danger">Fix the highlighted piece before saving.</span>}
         {changed && !preview.some((chip) => chip.kind === 'error') && !compiled && (

@@ -14,6 +14,15 @@ export interface FieldMenuSection {
   onToggle: (code: string) => void;
 }
 
+/** The view's Wrap text setting, shown as a column at the right of the field list. */
+export interface FieldMenuWrap {
+  /** Fields that wrap in this view. */
+  selected: string[];
+  /** Fields that can wrap (text and multi-link); the others leave the column empty. */
+  eligible: string[];
+  onToggle: (code: string) => void;
+}
+
 export interface FieldMenuAction {
   id: string;
   label: string;
@@ -80,6 +89,7 @@ export function FieldMenu({
   y,
   sections,
   fields,
+  wrap,
   actions = [],
   onClose,
 }: {
@@ -87,6 +97,7 @@ export function FieldMenu({
   y: number;
   sections: FieldMenuSection[];
   fields: FieldChoice[];
+  wrap?: FieldMenuWrap;
   actions?: FieldMenuAction[];
   onClose: () => void;
 }) {
@@ -110,7 +121,7 @@ export function FieldMenu({
       ref={ref}
       role="menu"
       aria-label="Fields"
-      className="fixed z-50 flex w-56 flex-col rounded-md border border-line-strong bg-surface-raised p-1 text-fg [&>*]:shrink-0"
+      className={`fixed z-50 flex ${wrap ? 'w-72' : 'w-56'} flex-col rounded-md border border-line-strong bg-surface-raised p-1 text-fg [&>*]:shrink-0`}
       style={{
         left: frame.left,
         top: frame.top,
@@ -122,21 +133,40 @@ export function FieldMenu({
       {sections.map((section, index) => (
         <div key={section.id} className="flex shrink-0 flex-col [&>*]:shrink-0">
           {index > 0 && <div className="my-1 border-t border-line" />}
-          <span className="px-2 py-1 text-xs text-fg-subtle">{section.title}</span>
+          <span className="flex items-center px-2 py-1 text-xs text-fg-subtle">
+            {section.title}
+            {wrap && <span className="ml-auto w-16 shrink-0 text-center">Wrap text</span>}
+          </span>
           {fields.map((field) => {
             const on = section.selected.includes(field.code);
-            return (
+            const show = (
               <button
-                key={field.code}
                 role="menuitemcheckbox"
                 aria-checked={on}
-                className={item}
-                style={rowHeight}
+                className={wrap ? 'flex min-w-0 flex-1 items-center gap-2 self-stretch px-2 text-left text-sm' : item}
+                style={wrap ? undefined : rowHeight}
                 onClick={() => section.onToggle(field.code)}
               >
-                <span className="flex w-3.5 justify-center text-accent">{on && <Icon name="check" />}</span>
-                {field.label}
+                <span className="flex w-3.5 shrink-0 justify-center text-accent">{on && <Icon name="check" />}</span>
+                <span className="truncate">{field.label}</span>
               </button>
+            );
+            if (!wrap) return <span key={field.code} className="contents">{show}</span>;
+            return (
+              <div key={field.code} className="flex shrink-0 items-center rounded-sm hover:bg-row-hover" style={rowHeight}>
+                {show}
+                <span className="flex w-16 shrink-0 justify-center">
+                  {wrap.eligible.includes(field.code) && (
+                    <input
+                      type="checkbox"
+                      aria-label={`Wrap ${field.label}`}
+                      checked={wrap.selected.includes(field.code)}
+                      onChange={() => wrap.onToggle(field.code)}
+                      className="accent-[var(--sgp-color-accent)]"
+                    />
+                  )}
+                </span>
+              </div>
             );
           })}
         </div>

@@ -17,8 +17,12 @@ export function ColumnMenu({
   onStatusDisplay,
   onConditionalFormat,
   conditionalFormatBlocked,
-  onManageColumns,
+  onManageFields,
   onConfigureField,
+  wrap,
+  onWrap,
+  onSort,
+  onGroupBy,
   onClose,
 }: {
   x: number;
@@ -29,8 +33,14 @@ export function ColumnMenu({
   onConditionalFormat?: () => void;
   /** Why the viewer can't add formats here; the item shows disabled with this explanation. */
   conditionalFormatBlocked?: string;
-  onManageColumns?: () => void;
+  onManageFields?: () => void;
   onConfigureField?: () => void;
+  /** Whether this view wraps the column; the item shows only for text and multi-link fields. */
+  wrap?: boolean;
+  onWrap?: () => void;
+  /** Sorts this view by the column; absent where the view cannot. */
+  onSort?: (direction: 'asc' | 'desc') => void;
+  onGroupBy?: () => void;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -68,11 +78,11 @@ export function ColumnMenu({
         className={item}
         style={height}
         onClick={() => {
-          onManageColumns?.();
+          onManageFields?.();
           onClose();
         }}
       >
-        <Icon name="columns-3" /> Manage columns
+        <Icon name="settings" /> Manage fields
       </button>
       {onConfigureField && (
         <button
@@ -84,18 +94,57 @@ export function ColumnMenu({
             onClose();
           }}
         >
-          <Icon name="settings" /> Configure field
+          <Icon name="wrench" /> Configure field
         </button>
       )}
-      <button role="menuitem" className={`${item} text-fg-muted`} style={height}>
-        <Icon name="arrow-down-a-z" /> Sort ascending
-      </button>
-      <button role="menuitem" className={`${item} text-fg-muted`} style={height}>
-        <Icon name="arrow-up-z-a" /> Sort descending
-      </button>
-      <button role="menuitem" className={`${item} text-fg-muted`} style={height}>
+      {(
+        [
+          ['asc', 'arrow-down-a-z', 'Sort ascending'],
+          ['desc', 'arrow-up-z-a', 'Sort descending'],
+        ] as const
+      ).map(([direction, icon, label]) => (
+        <button
+          key={direction}
+          role="menuitem"
+          className={`${item} ${onSort ? '' : 'text-fg-muted'}`}
+          style={height}
+          onClick={() => {
+            onSort?.(direction);
+            onClose();
+          }}
+        >
+          <Icon name={icon} /> {label}
+        </button>
+      ))}
+      <button
+        role="menuitem"
+        className={`${item} ${onGroupBy ? '' : 'text-fg-muted'}`}
+        style={height}
+        onClick={() => {
+          onGroupBy?.();
+          onClose();
+        }}
+      >
         <Icon name="group" /> Group by this column
       </button>
+      {onWrap && (
+        <>
+          <div className="my-1 border-t border-line" />
+          <button
+            role="menuitemcheckbox"
+            aria-checked={!!wrap}
+            className={item}
+            style={height}
+            onClick={() => {
+              onWrap();
+              onClose();
+            }}
+          >
+            <span className="flex w-3.5 justify-center text-accent">{wrap && <Icon name="check" />}</span>
+            Wrap text
+          </button>
+        </>
+      )}
       {onStatusDisplay && (
         <>
           <div className="my-1 border-t border-line" />

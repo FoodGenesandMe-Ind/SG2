@@ -1,0 +1,10 @@
+---
+description: Correct grammar in UI copy Nephi suggests
+alwaysApply: true
+---
+
+# UI copy grammar
+
+When Nephi suggests UI copy (messages, labels, notices, tooltips) that is grammatically incorrect, use the corrected wording and tell him afterwards what changed and why, in one short line. Examples: hyphenate compound modifiers before a noun ("System-locked records"), and split comma splices into two sentences ("Record is locked. Contact your admin to unlock it.").
+
+Apply the same check to copy already in the product when touching it.

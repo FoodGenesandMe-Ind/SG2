@@ -3,6 +3,7 @@ import {
   departments,
   pages,
   pipelineSteps,
+  projects,
   shots,
   statusValues,
   tasks,
@@ -16,7 +17,7 @@ import {
 import { useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { formatClass, formatsFor, styleCss } from './conditionalFormat';
 import { groupByLevels, idsAtDepth, isDepartmentThenStep, type DataGroup, type GroupBucket } from './grouping';
-import { trackWidth, useColumnLayout } from './columns';
+import { nextSort, SortArrow, trackWidth, useColumnLayout } from './columns';
 import type { Direction } from './directions';
 import { Gantt, type GanttColumn, type GanttLabelOption, type GanttLayout, type GanttRow } from './Gantt';
 import { Icon } from './Icon';
@@ -173,10 +174,29 @@ function taskGroupIds(projectTasks: Task[]) {
 }
 
 /** Tasks in display order: each top-level task followed by its sub-tasks. */
-function ordered(list: Task[]) {
-  return list
+/** Tasks with each one's sub-tasks under it. A sort orders the tasks, and the sub-tasks within each task. */
+function ordered(list: Task[], sort: GroupLevel[] = []) {
+  const sorted = sort.length ? [...list].sort((a, b) => compareTasks(a, b, sort)) : list;
+  return sorted
     .filter((t) => !t.parentTaskId)
-    .flatMap((t) => [t, ...list.filter((s) => s.parentTaskId === t.id)]);
+    .flatMap((t) => [t, ...sorted.filter((s) => s.parentTaskId === t.id)]);
+}
+
+function taskSortKey(task: Task, field: string): string | number {
+  if (field === 'todos') return openTodos(task);
+  if (field === 'bidDays' || field === 'loggedDays') return task[field] ?? 0;
+  if (field === 'name') return task.name.toLowerCase();
+  return taskBucket(task, field, 'long').sort;
+}
+
+function compareTasks(a: Task, b: Task, sort: GroupLevel[]) {
+  for (const level of sort) {
+    const x = taskSortKey(a, level.field);
+    const y = taskSortKey(b, level.field);
+    const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+    if (order !== 0) return level.direction === 'desc' ? -order : order;
+  }
+  return 0;
 }
 
 export type TaskGrouping = 'department' | 'shot' | 'none';
@@ -223,6 +243,23 @@ export function taskBucket(task: Task, field: string, statusDisplay: StatusDispl
   return { key: String(raw), label: String(raw), detail: '', sort: String(raw).toLowerCase() };
 }
 
+/** Task columns to the left of the chart when a page has not chosen its own. The task name always shows, first. */
+export const DEFAULT_GANTT_COLUMNS = ['name', 'assigneeId', 'status', 'todos'];
+
+const GANTT_WIDTH: Record<string, string> = { name: '12rem', assigneeId: '4.5rem', todos: '7rem', startDate: '6.5rem', dueDate: '6.5rem', bidDays: '4rem', loggedDays: '4.5rem' };
+const GANTT_LABEL: Record<string, string> = { assigneeId: 'Assigned' };
+
+/** Any Task field as plain text, for a gantt column. */
+function taskFieldText(task: Task, code: string, statusDisplay: StatusDisplay): string {
+  const raw = task[code as keyof Task];
+  if (code === 'bidDays' || code === 'loggedDays') return typeof raw === 'number' ? `${raw}d` : '';
+  if (code === 'parentTaskId') return tasks.find((item) => item.id === task.parentTaskId)?.name ?? '';
+  if (code === 'dependencies') return (task.dependencies ?? []).map((dep) => tasks.find((item) => item.id === dep.predecessorId)?.name ?? dep.predecessorId).join(', ');
+  if (code === 'projectId') return projects.find((project) => project.id === task.projectId)?.name ?? '';
+  if (raw == null || raw === '') return '';
+  return taskBucket(task, code, statusDisplay).label;
+}
+
 export function TasksGantt({
   direction,
   statusDisplay,
@@ -257,12 +294,16 @@ export function TasksGantt({
         ? taskGroupIds(source)
         : { departments: [] as string[], steps: [] as string[] };
 
-  const columns: GanttColumn[] = [
-    { key: 'task', label: 'Task', width: '12rem' },
-    { key: 'assignee', label: 'Assigned', width: '4.5rem' },
-    { key: 'status', label: 'Status', width: statusDisplay === 'long' ? '8rem' : '4.5rem' },
-    { key: 'todos', label: 'To do', width: '7rem' },
-  ];
+  const taskFields = resolveTableConfig('Task', source[0]?.projectId ?? null)?.fields ?? [];
+  const shownCodes = ['name', ...(layout?.shown ?? DEFAULT_GANTT_COLUMNS).filter((code) => code !== 'name')];
+  const columns: GanttColumn[] = shownCodes
+    .map((code) => taskFields.find((field) => field.code === code))
+    .filter((field): field is NonNullable<typeof field> => !!field)
+    .map((field) => ({
+      key: field.code,
+      label: GANTT_LABEL[field.code] ?? field.label,
+      width: field.code === 'status' ? (statusDisplay === 'long' ? '8rem' : '4.5rem') : GANTT_WIDTH[field.code] ?? '8rem',
+    }));
 
   const itemRow = (task: Task): GanttRow => {
     const sub = !!task.parentTaskId;
@@ -282,23 +323,32 @@ export function TasksGantt({
         bid: `${task.bidDays}d`,
       },
       dependsOn: task.dependencies?.map((d) => ({ rowId: d.predecessorId, type: d.type })),
-      cells: [
-        <span key="t" className={`flex min-w-0 items-center gap-1.5 ${sub ? 'pl-5 text-fg-muted' : ''}`}>
-          {sub && <Icon name="corner-down-right" size={12} className="shrink-0 text-fg-subtle" />}
-          {showLink && <span className="shrink-0 font-medium text-accent">{entityCode(task)}</span>}
-          <span className="truncate">{task.name}</span>
-        </span>,
-        <Avatar key="a" personId={task.assigneeId} />,
-        <StatusPill key="s" code={task.status} pillStyle={direction.pillStyle} display={statusDisplay} />,
-        <TodoSummary key="d" task={task} />,
-      ],
+      cells: columns.map((column) => {
+        if (column.key === 'name') {
+          return (
+            <span key={column.key} className={`flex min-w-0 items-center gap-1.5 ${sub ? 'pl-5 text-fg-muted' : ''}`}>
+              {sub && <Icon name="corner-down-right" size={12} className="shrink-0 text-fg-subtle" />}
+              {showLink && <span className="shrink-0 font-medium text-accent">{entityCode(task)}</span>}
+              <span className="truncate">{task.name}</span>
+            </span>
+          );
+        }
+        if (column.key === 'assigneeId') return <Avatar key={column.key} personId={task.assigneeId} />;
+        if (column.key === 'status') return <StatusPill key={column.key} code={task.status} pillStyle={direction.pillStyle} display={statusDisplay} />;
+        if (column.key === 'todos') return <TodoSummary key={column.key} task={task} />;
+        return (
+          <span key={column.key} className="truncate tabular-nums">
+            {taskFieldText(task, column.key, statusDisplay)}
+          </span>
+        );
+      }),
     };
   };
 
   const rows: GanttRow[] = [];
   const generic = !!levels && grouping !== 'shot' && !isDepartmentThenStep(levels);
   if (generic && levels.length === 0) {
-    rows.push(...ordered(source).map(itemRow));
+    rows.push(...ordered(source, layout?.sort).map(itemRow));
   } else if (generic) {
     const tree = groupByLevels(source, levels, (task, field) => taskBucket(task, field, statusDisplay));
     const walk = (list: DataGroup<Task>[]) => {
@@ -318,12 +368,12 @@ export function TasksGantt({
         });
         if (collapsed.has(group.id)) continue;
         if (group.children.length) walk(group.children);
-        else rows.push(...ordered(group.rows).map(itemRow));
+        else rows.push(...ordered(group.rows, layout?.sort).map(itemRow));
       }
     };
     walk(tree);
   } else if (grouping === 'none') {
-    rows.push(...ordered(source).map(itemRow));
+    rows.push(...ordered(source, layout?.sort).map(itemRow));
   } else if (grouping === 'shot') {
     const shotIds = [...new Set(source.filter((t) => t.entityType === 'Shot').map((t) => t.entityId))];
     for (const shot of shots.filter((s) => shotIds.includes(s.id))) {
@@ -352,7 +402,7 @@ export function TasksGantt({
       });
       if (collapsed.has(shot.id)) continue;
       const stepOrder = (t: Task) => pipelineSteps.find((s) => s.id === t.stepId)?.order ?? 0;
-      rows.push(...ordered([...shotTasks].sort((a, b) => stepOrder(a) - stepOrder(b))).map(itemRow));
+      rows.push(...ordered([...shotTasks].sort((a, b) => stepOrder(a) - stepOrder(b)), layout?.sort).map(itemRow));
     }
   } else {
     for (const { department, steps } of groupTasks(source)) {
@@ -371,7 +421,7 @@ export function TasksGantt({
           cells: [<GroupLabel key="g" group={step} expanded={!collapsed.has(step.id)} onToggle={(event) => toggle(step.id, event, builtinIds.steps)} />],
         });
         if (collapsed.has(step.id)) continue;
-        rows.push(...ordered(step.tasks).map(itemRow));
+        rows.push(...ordered(step.tasks, layout?.sort).map(itemRow));
       }
     }
   }
@@ -385,6 +435,8 @@ export function TasksGantt({
       labelOptions={TASK_LABEL_OPTIONS}
       layout={layout}
       onLayout={onLayout}
+      sort={layout?.sort}
+      onSortColumn={onLayout ? (code) => onLayout({ ...layout, sort: nextSort(layout?.sort, code) }) : undefined}
       onColumnContextMenu={
         onColumnContextMenu
           ? (event, column) => onColumnContextMenu(event, { code: column.key, label: column.label })
@@ -475,6 +527,8 @@ export function TasksTable({
   onColumnOrder,
   onColumnWidth,
   onColumnContextMenu,
+  sort = [],
+  onSortColumn,
 }: {
   direction: Direction;
   statusDisplay: StatusDisplay;
@@ -484,6 +538,9 @@ export function TasksTable({
   onColumnOrder?: (order: string[]) => void;
   onColumnWidth?: (code: string, width: number) => void;
   onColumnContextMenu?: (event: MouseEvent, column: { code: string; label: string }) => void;
+  /** The page sort, and a click on a column header to sort by it or reverse it. */
+  sort?: GroupLevel[];
+  onSortColumn?: (code: string) => void;
 }) {
   const { projectTasks } = getTasksPage();
   const [collapsed, toggle] = useCollapsed(['dep-assets']);
@@ -549,19 +606,20 @@ export function TasksTable({
           {columns.map((c) => (
             <span
               key={c.code}
-              {...layout.headerProps(c.code, c.label)}
+              {...layout.headerProps(c.code, c.label, onSortColumn)}
               role="columnheader"
-              title="Drag to move, right-click for options"
+              title={onSortColumn ? 'Click to sort, drag to move, right-click for options' : 'Drag to move, right-click for options'}
               onContextMenu={(event) => {
                 if (!onColumnContextMenu) return;
                 event.preventDefault();
                 onColumnContextMenu(event, { code: c.code, label: c.label });
               }}
               className={`relative flex h-full min-w-0 cursor-grab items-center px-2 hover:bg-row-hover ${c.end ? 'justify-end' : ''} ${
-                layout.movingCode === c.code ? 'bg-accent-subtle text-fg' : ''
+                layout.movingCode === c.code ? 'opacity-50' : ''
               }`}
             >
               <span className="truncate">{c.label}</span>
+              <SortArrow sort={sort} code={c.code} />
               {layout.handle(c.code, c.label)}
             </span>
           ))}
@@ -597,13 +655,13 @@ export function TasksTable({
                   <div className="flex items-center border-b border-line bg-surface-raised/60 px-2 text-sm" style={rowHeight}>
                     <GroupLabel group={step} expanded={!collapsed.has(step.id)} onToggle={(event) => toggle(step.id, event, builtinIds.steps)} />
                   </div>
-                  {!collapsed.has(step.id) && ordered(step.tasks).map((t) => row(t, index++))}
+                  {!collapsed.has(step.id) && ordered(step.tasks, sort).map((t) => row(t, index++))}
                 </div>
               ))}
           </div>
         ))
           : levels.length === 0
-            ? ordered(projectTasks).map((task) => row(task, index++))
+            ? ordered(projectTasks, sort).map((task) => row(task, index++))
             : groupByLevels(projectTasks, levels, (task, field) => taskBucket(task, field, statusDisplay)).map(function renderGroup(group) {
                 return (
                   <div key={group.id}>
@@ -615,7 +673,7 @@ export function TasksTable({
                       />
                     </div>
                     {!collapsed.has(group.id) &&
-                      (group.children.length > 0 ? group.children.map(renderGroup) : ordered(group.rows).map((task) => row(task, index++)))}
+                      (group.children.length > 0 ? group.children.map(renderGroup) : ordered(group.rows, sort).map((task) => row(task, index++)))}
                   </div>
                 );
               })}

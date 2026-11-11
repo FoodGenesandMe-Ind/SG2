@@ -338,6 +338,19 @@ export const ColumnsAndPageMenu: StoryObj = {
   },
 };
 
+export const ManageFields: StoryObj = {
+  name: 'Manage fields and Wrap text',
+  tags: ['proposed'],
+  render: () => (
+    <StoryFrame
+      title="Manage fields: one section per view"
+      intro="The gear beside Search shots opens Manage fields in every view, on the tab for the view you are in. Click a field for its Display options (this view: wrap text, conditional formatting, sort, group, and number, date, or status display) and its Configuration (everywhere: uniqueness, formula, statuses, permissions). Each display option has view checkboxes to give other views the same setting; a view with its own different setting is greyed, '[name] view already configured'. Save keeps the dialog open; Close leaves."
+    >
+      <Specimen direction={studioNeutral} theme="dark" showComponents={false} height={760} initialFieldsOpen />
+    </StoryFrame>
+  ),
+};
+
 export const ConditionalFormatting: StoryObj = {
   name: 'Conditional formatting: rules',
   tags: ['proposed'],

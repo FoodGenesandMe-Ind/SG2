@@ -1,6 +1,7 @@
 import {
   assets,
   pages,
+  projects,
   resolveTableConfig,
   sequences,
   shots,
@@ -16,6 +17,8 @@ import {
 } from '@sgp/mock-data';
 import { formatDate } from './dates';
 import { calculateField, formulaText } from './formulaValue';
+import { formatNumber } from './numberDisplay';
+import { personName } from './people';
 import { groupByLevels, groupingFromQuery, type DataGroup, type GroupBucket } from './grouping';
 
 const PAGE_ID = 'pg-lmp-shots';
@@ -112,6 +115,51 @@ function shotBucket(shot: Shot, field: EffectiveField): GroupBucket {
   return { key: label || 'none', label: label || 'None', detail: '', sort: (label || '\uffff').toLowerCase() };
 }
 
+/** A value that orders like the field: numbers as numbers, statuses in workflow order, links by their name. */
+function sortKey(shot: Shot, field: EffectiveField, fields: EffectiveField[]): string | number | null {
+  if (field.code === 'sequenceId') return sequences.find((seq) => seq.id === shot.sequenceId)?.code ?? null;
+  if (field.code === 'assetIds') return assetNameList(shot.assetIds).join(', ').toLowerCase() || null;
+  if (field.type === 'calculated') {
+    const value = calculateField(field, shot as unknown as Record<string, unknown>, fields);
+    return typeof value === 'number' || typeof value === 'string' ? value : null;
+  }
+  const raw = shot[field.code as keyof Shot];
+  if (field.type === 'status' || field.type === 'list') {
+    const order = field.validValues?.indexOf(String(raw ?? '')) ?? -1;
+    return order < 0 ? null : order;
+  }
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'number') return raw;
+  if (Array.isArray(raw)) return raw.join(', ').toLowerCase();
+  return String(raw).toLowerCase();
+}
+
+/** Sorts by each level in turn; empty values go last either way. */
+export function sortShots(shots: Shot[], sort: GroupLevel[], fields: EffectiveField[], fieldByCode: (code: string) => EffectiveField | undefined) {
+  if (sort.length === 0) return shots;
+  const levels = sort
+    .map((level) => ({ level, field: fields.find((item) => item.code === level.field) ?? fieldByCode(level.field) }))
+    .filter((entry): entry is { level: GroupLevel; field: EffectiveField } => !!entry.field);
+  return [...shots].sort((a, b) => {
+    for (const { level, field } of levels) {
+      const left = sortKey(a, field, fields);
+      const right = sortKey(b, field, fields);
+      if (left === right) continue;
+      if (left === null) return 1;
+      if (right === null) return -1;
+      const order = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right), 'en', { numeric: true });
+      if (order !== 0) return level.direction === 'desc' ? -order : order;
+    }
+    return 0;
+  });
+}
+
+/** The page with its shots in sort order. Group it afterwards; each group keeps that order. */
+export function withSort(page: ShotsPage, sort: GroupLevel[], fields: EffectiveField[] = page.fields): ShotsPage {
+  if (sort.length === 0) return page;
+  return { ...page, allShots: sortShots(page.allShots, sort, fields, page.fieldByCode) };
+}
+
 /** Groups the page's shots. A Sequence level still lists every sequence in the project, including an empty one. */
 export function withGrouping(page: ShotsPage, grouping: GroupLevel[]): ShotsPage {
   const projectId = page.page.query.filters.find((filter) => filter.field === 'projectId')?.value as string | undefined;
@@ -187,18 +235,24 @@ export function shotCellText(field: EffectiveField, shot: Shot, statusDisplay: S
   if (field.type === 'media') return '';
   if (field.type === 'calculated') {
     const value = calculateField(field, shot as unknown as Record<string, unknown>, fields);
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return formatDate(value.slice(0, 10));
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) return formatDate(value.slice(0, 10), field.dateFormat);
+    if (typeof value === 'number' && field.display) return formatNumber(value, field.display);
     return formulaText(value);
   }
   const raw = shot[field.code as keyof Shot];
+  if (typeof raw === 'number' && field.display) return formatNumber(raw, field.display);
   if (field.type === 'status') {
     const value = statusValues.find((s) => s.code === shot.status);
     if (!value) return shot.status;
     return statusDisplay === 'long' ? value.label : value.shortLabel;
   }
   if (field.code === 'assetIds') return assetNames(shot.assetIds, 20);
-  if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw)) return formatDate(raw.slice(0, 10));
   if (raw == null || raw === '') return '';
+  if (field.type === 'user') return personName(String(raw));
+  if (field.code === 'sequenceId') return sequences.find((seq) => seq.id === raw)?.code ?? String(raw);
+  if (field.code === 'projectId') return projects.find((project) => project.id === raw)?.name ?? String(raw);
+  if (field.type === 'checkbox') return raw ? 'Yes' : '';
+  if (typeof raw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw)) return formatDate(raw.slice(0, 10), field.dateFormat);
   return String(raw);
 }
 
@@ -211,7 +265,11 @@ export function uniqueCopy(value: string, taken: Set<string>) {
   return name;
 }
 
+export function assetNameList(ids: string[]) {
+  return ids.map((id) => assets.find((a) => a.id === id)?.name ?? id);
+}
+
 export function assetNames(ids: string[], max = 2) {
-  const names = ids.map((id) => assets.find((a) => a.id === id)?.name ?? id);
+  const names = assetNameList(ids);
   return names.length > max ? `${names.slice(0, max).join(', ')} +${names.length - max}` : names.join(', ');
 }

@@ -1,12 +1,28 @@
+import type { DateFormat } from '@sgp/mock-data';
+
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-/** Every date field reads as DD-Mon-YYYY, for example 12-Dec-2026. */
-export function formatDate(iso: string) {
+/** Date formats a view can choose, with a sample of each. */
+export const DATE_FORMATS: Array<{ value: DateFormat; sample: string }> = [
+  { value: 'DD-Mon-YYYY', sample: '12-Dec-2026' },
+  { value: 'YYYY-MM-DD', sample: '2026-12-12' },
+  { value: 'MM/DD/YYYY', sample: '12/12/2026' },
+  { value: 'DD/MM/YYYY', sample: '12/12/2026' },
+  { value: 'Mon D, YYYY', sample: 'Dec 12, 2026' },
+];
+
+/** A date as the view shows it. Every date reads DD-Mon-YYYY (12-Dec-2026) unless the view picks another format. */
+export function formatDate(iso: string, format: DateFormat = 'DD-Mon-YYYY') {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
   if (!match) return iso ?? '';
   const [, year, month, day] = match;
-  return `${day}-${MONTHS[Number(month) - 1] ?? month}-${year}`;
+  const mon = MONTHS[Number(month) - 1] ?? month;
+  if (format === 'YYYY-MM-DD') return `${year}-${month}-${day}`;
+  if (format === 'MM/DD/YYYY') return `${month}/${day}/${year}`;
+  if (format === 'DD/MM/YYYY') return `${day}/${month}/${year}`;
+  if (format === 'Mon D, YYYY') return `${mon} ${Number(day)}, ${year}`;
+  return `${day}-${mon}-${year}`;
 }
 
 function isoOf(year: number, month: number, day: number): string | null {

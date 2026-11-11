@@ -1,4 +1,6 @@
+import type { GroupLevel } from '@sgp/mock-data';
 import { useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
+import { Icon } from './Icon';
 
 const MIN_WIDTH = 40;
 const MAX_AUTO_WIDTH = 640;
@@ -35,18 +37,29 @@ interface DragState {
   lineX: number;
 }
 
-function track(onMove: (event: PointerEvent) => void, onUp: () => void, cursor: string) {
+function track(onMove: (event: PointerEvent) => void, onUp: (cancelled: boolean) => void, cursor: string) {
   const previousCursor = document.body.style.cursor;
   const previousSelect = document.body.style.userSelect;
-  const up = () => {
+  let done = false;
+  const end = (cancelled: boolean) => {
+    if (done) return;
+    done = true;
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', up);
+    window.removeEventListener('keydown', key, true);
     document.body.style.cursor = previousCursor;
     document.body.style.userSelect = previousSelect;
-    onUp();
+    onUp(cancelled);
+  };
+  const up = () => end(false);
+  const key = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    event.stopImmediatePropagation();
+    end(true);
   };
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', up);
+  window.addEventListener('keydown', key, true);
   document.body.style.userSelect = 'none';
   return () => (document.body.style.cursor = cursor);
 }
@@ -69,6 +82,8 @@ export function useColumnLayout({
   const [drag, setDrag] = useState<DragState | null>(null);
   const [resizing, setResizing] = useState<string | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  // The click that ends a move or a resize is not a click on the header.
+  const justMoved = useRef(false);
 
   const startMove = (code: string, label: string) => (event: ReactPointerEvent) => {
     const table = tableRef.current;
@@ -82,18 +97,19 @@ export function useColumnLayout({
       const rects = headers.map((h) => h.getBoundingClientRect());
       const found = rects.findIndex((r) => e.clientX < r.left + r.width / 2);
       const insertAt = found < 0 ? rects.length : found;
-      const edge = insertAt < rects.length ? rects[insertAt].left : rects[rects.length - 1].right;
+      const edge = insertAt < rects.length ? rects[insertAt]!.left : rects[rects.length - 1]!.right;
       const next = { code, label, x: e.clientX, y: e.clientY, insertAt, lineX: edge - table.getBoundingClientRect().left };
       dragRef.current = next;
       setDrag(next);
     };
     setCursor = track(
       move,
-      () => {
+      (cancelled) => {
         const done = dragRef.current;
         dragRef.current = null;
         setDrag(null);
-        if (!done) return;
+        if (done) justMoved.current = true;
+        if (!done || cancelled) return;
         const next = moveColumn(order, code, done.insertAt);
         if (next.join() !== order.join()) onOrder(next);
       },
@@ -111,7 +127,10 @@ export function useColumnLayout({
     setResizing(code);
     const setCursor = track(
       (e) => onWidth(code, Math.max(MIN_WIDTH, Math.round(startWidth + e.clientX - startX))),
-      () => setResizing(null),
+      () => {
+        setResizing(null);
+        justMoved.current = true;
+      },
       'col-resize',
     );
     setCursor();
@@ -122,10 +141,23 @@ export function useColumnLayout({
     if (tableRef.current && onWidth) onWidth(code, fitWidth(tableRef.current, code));
   };
 
-  /** Props for a header cell (add `relative` to its class so the resize handle can sit on its edge). */
-  const headerProps = (code: string, label: string) => ({
+  /**
+   * Props for a header cell (add `relative` to its class so the resize handle can sit on its edge).
+   * With `onSort`, a click on the header sorts by that column, ascending first and then flipping.
+   */
+  const headerProps = (code: string, label: string, onSort?: (code: string) => void) => ({
     'data-col': code,
-    onPointerDown: startMove(code, label),
+    onPointerDown: (event: ReactPointerEvent) => {
+      justMoved.current = false;
+      startMove(code, label)(event);
+    },
+    onClick: (event: ReactMouseEvent) => {
+      if (justMoved.current || (event.target as HTMLElement).closest('[role="separator"]')) {
+        justMoved.current = false;
+        return;
+      }
+      onSort?.(code);
+    },
   });
 
   const handle = (code: string, label: string) =>
@@ -145,14 +177,24 @@ export function useColumnLayout({
       </span>
     ) : null;
 
-  /** The insertion line and the floating label while a column is being moved; render inside the (relative) table. */
+  const from = drag ? order.indexOf(drag.code) : -1;
+  const moves = !!drag && drag.insertAt !== from && drag.insertAt !== from + 1;
+
+  /**
+   * The insertion hairline and the floating label while a column is being moved; render inside the (relative) table.
+   * Same as every drag to reorder: the line glides to where the column will land and shows only when it would move.
+   */
   const overlay = drag ? (
     <>
-      <span
-        aria-hidden
-        className="pointer-events-none absolute top-0 bottom-0 z-30 w-0.5 bg-accent"
-        style={{ left: drag.lineX - 1 }}
-      />
+      {moves && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-0 bottom-0 z-30 w-px bg-accent transition-[left] duration-100 ease-out"
+          style={{ left: drag.lineX }}
+        >
+          <span className="absolute top-1 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-accent" />
+        </span>
+      )}
       <span
         aria-hidden
         className="pointer-events-none fixed z-50 rounded-sm border border-accent bg-surface-raised px-2 py-0.5 text-sm font-medium text-fg"
@@ -164,4 +206,26 @@ export function useColumnLayout({
   ) : null;
 
   return { headerProps, handle, overlay, movingCode: drag?.code ?? null };
+}
+
+/** The sort a click on a column header gives: ascending by that column, or the other direction if it already leads. */
+export function nextSort(sort: GroupLevel[] | undefined, code: string): GroupLevel[] {
+  const lead = sort?.[0];
+  return [{ field: code, direction: lead?.field === code && lead.direction === 'asc' ? 'desc' : 'asc' }];
+}
+
+/** The arrow beside a sorted column's name, with its level when several columns sort. */
+export function SortArrow({ sort, code }: { sort?: GroupLevel[]; code: string }) {
+  const index = (sort ?? []).findIndex((level) => level.field === code);
+  if (index < 0 || !sort) return null;
+  const level = sort[index]!;
+  return (
+    <span
+      className="flex shrink-0 items-center text-fg-subtle"
+      title={`Sorted ${level.direction === 'desc' ? 'descending' : 'ascending'}${sort.length > 1 ? `, level ${index + 1} of ${sort.length}` : ''}. Click to reverse.`}
+    >
+      <Icon name={level.direction === 'desc' ? 'arrow-down' : 'arrow-up'} size={12} />
+      {sort.length > 1 && <span className="text-xs tabular-nums">{index + 1}</span>}
+    </span>
+  );
 }

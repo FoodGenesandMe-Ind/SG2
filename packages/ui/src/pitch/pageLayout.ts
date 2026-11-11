@@ -2,6 +2,8 @@ import { resolveTableConfig, type ColumnSettings, type ConditionalFormat, type G
 import type { GanttLayout } from './Gantt';
 import { groupingFromQuery, groupingLabel } from './grouping';
 import { VIEW_LABEL } from './shotsPage';
+import { sameWrap, type WrapByPlace } from './wrap';
+import { SHOT_VIEWS, VIEW_NAME, type ViewDisplays } from './viewDisplay';
 
 /** Everything a user can change on a table page without editing its query. Saved with the page. */
 export interface PageLayout {
@@ -30,7 +32,20 @@ export interface PageLayout {
   kanbanColumns: number;
   kanbanField: string;
   kanbanBody: string[];
+  /** Order of records within each group. Empty keeps the order they were created in. */
+  sort: GroupLevel[];
+  /** Fields in the card header and the kanban card header. */
+  cardHeader: string[];
+  kanbanHeader: string[];
+  /** Kanban card order set by dropping cards where they go. Empty follows the page sort. */
+  kanbanOrder: string[];
+  /** Text fields that wrap, per place (table, card header, card body, and so on). */
+  wrap: WrapByPlace;
+  /** Display settings each view keeps for itself; a view without its own follows the page. */
+  viewDisplay: ViewDisplays;
 }
+
+const DEFAULT_HEADER = ['code', 'status'];
 
 function projectIdOf(page: TablePage) {
   const value = page.query.filters.find((filter) => filter.field === 'projectId')?.value;
@@ -51,15 +66,27 @@ export function completeLayout(layout: PageLayout, page?: TablePage): PageLayout
   const kanbanColumns = layout.kanbanColumns ?? page?.kanban?.columns ?? 4;
   const kanbanField = layout.kanbanField ?? page?.kanban?.field ?? 'status';
   const kanbanBody = layout.kanbanBody ?? page?.kanban?.fields ?? page?.cardSettings?.expandedFields ?? [];
+  const sort = layout.sort ?? page?.query.sort ?? [];
+  const cardHeader = layout.cardHeader ?? page?.cardSettings?.titleFields ?? DEFAULT_HEADER;
+  const kanbanHeader = layout.kanbanHeader ?? page?.kanban?.headerFields ?? page?.cardSettings?.titleFields ?? DEFAULT_HEADER;
+  const kanbanOrder = layout.kanbanOrder ?? page?.kanban?.order ?? [];
+  const wrap = layout.wrap ?? page?.wrapFields ?? {};
+  const viewDisplay = layout.viewDisplay ?? page?.viewDisplay ?? {};
   if (
     layout.taskGrouping === taskGrouping &&
     layout.kanbanColumns === kanbanColumns &&
     layout.kanbanField === kanbanField &&
-    layout.kanbanBody === kanbanBody
+    layout.kanbanBody === kanbanBody &&
+    layout.sort === sort &&
+    layout.cardHeader === cardHeader &&
+    layout.kanbanHeader === kanbanHeader &&
+    layout.kanbanOrder === kanbanOrder &&
+    layout.wrap === wrap &&
+    layout.viewDisplay === viewDisplay
   ) {
     return layout;
   }
-  return { ...layout, taskGrouping, kanbanColumns, kanbanField, kanbanBody };
+  return { ...layout, taskGrouping, kanbanColumns, kanbanField, kanbanBody, sort, cardHeader, kanbanHeader, kanbanOrder, wrap, viewDisplay };
 }
 
 export function layoutFromPage(page: TablePage, overrides: Partial<PageLayout> = {}): PageLayout {
@@ -81,6 +108,8 @@ export function layoutFromPage(page: TablePage, overrides: Partial<PageLayout> =
       order: page.ganttSettings?.columns,
       widths: page.ganttSettings?.columnWidths,
       pane: page.ganttSettings?.paneWidth,
+      shown: page.ganttSettings?.shownColumns,
+      sort: page.ganttSettings?.sort,
     },
     formats: page.conditionalFormats ?? [],
     grouping: groupingFromQuery(page.query),
@@ -88,6 +117,12 @@ export function layoutFromPage(page: TablePage, overrides: Partial<PageLayout> =
     kanbanColumns: page.kanban?.columns ?? 4,
     kanbanField: page.kanban?.field ?? 'status',
     kanbanBody: page.kanban?.fields ?? page.cardSettings?.expandedFields ?? [],
+    sort: page.query.sort ?? [],
+    cardHeader: page.cardSettings?.titleFields ?? DEFAULT_HEADER,
+    kanbanHeader: page.kanban?.headerFields ?? page.cardSettings?.titleFields ?? DEFAULT_HEADER,
+    kanbanOrder: page.kanban?.order ?? [],
+    wrap: page.wrapFields ?? {},
+    viewDisplay: page.viewDisplay ?? {},
     ...overrides,
   };
 }
@@ -104,10 +139,15 @@ export function pageWithLayout(page: TablePage, layout: PageLayout, changes: Par
   return {
     ...page,
     view: layout.view,
-    query: { ...page.query, columns: layout.columns, grouping: layout.grouping, groupBy: layout.grouping[0]?.field },
+    query: { ...page.query, columns: layout.columns, grouping: layout.grouping, groupBy: layout.grouping[0]?.field, sort: layout.sort ?? [] },
     columnSettings,
     conditionalFormats: layout.formats,
-    cardSettings: page.cardSettings && { ...page.cardSettings, columns: layout.cardColumns, expandedFields: layout.cardBody },
+    cardSettings: page.cardSettings && {
+      ...page.cardSettings,
+      columns: layout.cardColumns,
+      expandedFields: layout.cardBody,
+      titleFields: layout.cardHeader ?? page.cardSettings.titleFields,
+    },
     thumbSettings: page.thumbSettings && {
       ...page.thumbSettings,
       size: layout.thumbSize,
@@ -120,9 +160,13 @@ export function pageWithLayout(page: TablePage, layout: PageLayout, changes: Par
       columns: layout.gantt.order,
       columnWidths: layout.gantt.widths,
       paneWidth: layout.gantt.pane,
+      shownColumns: layout.gantt.shown,
+      sort: layout.gantt.sort,
       taskGrouping: layout.taskGrouping,
     },
-    kanban: { field: layout.kanbanField, columns: layout.kanbanColumns, fields: layout.kanbanBody },
+    wrapFields: layout.wrap ?? {},
+    viewDisplay: layout.viewDisplay ?? {},
+    kanban: { field: layout.kanbanField, columns: layout.kanbanColumns, fields: layout.kanbanBody, headerFields: layout.kanbanHeader, order: layout.kanbanOrder },
     ...changes,
   };
 }
@@ -139,18 +183,30 @@ export function layoutChanges(saved: PageLayout, draft: PageLayout, labelOf: (co
   if (saved.statusDisplay !== draft.statusDisplay) changes.push('Status display');
   if (saved.thumbSize !== draft.thumbSize) changes.push('Thumbnail size');
   if (saved.cardColumns !== draft.cardColumns) changes.push('Card columns');
-  if (saved.cardBody.join() !== draft.cardBody.join()) changes.push('Card fields');
+  if (saved.cardBody.join() !== draft.cardBody.join()) changes.push('Card body fields');
+  if ((saved.cardHeader ?? DEFAULT_HEADER).join() !== (draft.cardHeader ?? DEFAULT_HEADER).join()) changes.push('Card header fields');
+  if ((saved.kanbanHeader ?? DEFAULT_HEADER).join() !== (draft.kanbanHeader ?? DEFAULT_HEADER).join()) changes.push('Kanban header fields');
+  if ((saved.kanbanOrder ?? []).join() !== (draft.kanbanOrder ?? []).join()) changes.push('Kanban card order');
   if (saved.thumbInside.join() !== draft.thumbInside.join() || saved.thumbBelow.join() !== draft.thumbBelow.join()) changes.push('Thumbnail fields');
   if (saved.zoom !== draft.zoom) changes.push('Gantt time scale');
   if ((saved.gantt.order ?? []).join() !== (draft.gantt.order ?? []).join()) changes.push('Gantt column order');
   if (JSON.stringify(saved.gantt.widths ?? {}) !== JSON.stringify(draft.gantt.widths ?? {})) changes.push('Gantt column widths');
   if (saved.gantt.pane !== draft.gantt.pane) changes.push('Gantt divider');
+  if ((saved.gantt.shown ?? []).join() !== (draft.gantt.shown ?? []).join()) changes.push('Gantt task columns');
+  if (JSON.stringify(saved.gantt.sort ?? []) !== JSON.stringify(draft.gantt.sort ?? [])) changes.push('Gantt sort');
+  if (!sameWrap(saved.wrap, draft.wrap)) changes.push('Wrap text');
+  for (const view of SHOT_VIEWS) {
+    if (JSON.stringify(saved.viewDisplay?.[view] ?? {}) !== JSON.stringify(draft.viewDisplay?.[view] ?? {})) changes.push(`${VIEW_NAME[view]} view display`);
+  }
   if (JSON.stringify(saved.formats) !== JSON.stringify(draft.formats)) changes.push('Conditional formatting');
   if (JSON.stringify(saved.grouping) !== JSON.stringify(draft.grouping)) {
     changes.push(draft.grouping.length ? `Grouping: ${groupingLabel(draft.grouping, labelOf)}` : 'Grouping: none');
   }
   if (JSON.stringify(saved.taskGrouping ?? []) !== JSON.stringify(draft.taskGrouping ?? [])) {
     changes.push(draft.taskGrouping.length ? `Gantt grouping: ${groupingLabel(draft.taskGrouping, labelOf)}` : 'Gantt grouping: none');
+  }
+  if (JSON.stringify(saved.sort ?? []) !== JSON.stringify(draft.sort ?? [])) {
+    changes.push(draft.sort?.length ? `Sort: ${groupingLabel(draft.sort, labelOf)}` : 'Sort: none');
   }
   if ((saved.kanbanField ?? 'status') !== (draft.kanbanField ?? 'status')) changes.push(`Kanban field: ${labelOf(draft.kanbanField)}`);
   if ((saved.kanbanColumns ?? 4) !== (draft.kanbanColumns ?? 4)) changes.push(`Kanban columns: ${draft.kanbanColumns}`);

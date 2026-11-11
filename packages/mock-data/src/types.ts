@@ -57,6 +57,36 @@ export interface FieldDef {
    * A paste that would collide is renamed, for example "020_0010 copy".
    */
   unique?: 'project' | 'table';
+  /** How a number field (or a calculated field that gives a number) is shown. The stored value is unchanged. */
+  display?: NumberDisplay;
+  /** How a date field reads. A view setting, applied when a view shows the field; absent reads DD-Mon-YYYY. */
+  dateFormat?: DateFormat;
+}
+
+/** Ways a date can read. DD-Mon-YYYY (12-Dec-2026) is the default everywhere. */
+export type DateFormat = 'DD-Mon-YYYY' | 'YYYY-MM-DD' | 'MM/DD/YYYY' | 'DD/MM/YYYY' | 'Mon D, YYYY';
+
+/** Display settings one view keeps for itself. Anything absent follows the page. */
+export interface ViewDisplay {
+  statusDisplay?: StatusDisplay;
+  /** Number display per field code. */
+  numberDisplay?: Record<string, NumberDisplay>;
+  /** Date format per field code. */
+  dateFormat?: Record<string, DateFormat>;
+  sort?: GroupLevel[];
+  grouping?: GroupLevel[];
+}
+
+/**
+ * Number display. Percent shows the stored value times 100 (0.25 reads 25%).
+ * Accounting puts the currency symbol at the left edge and negatives in parentheses.
+ */
+export interface NumberDisplay {
+  style: 'number' | 'currency' | 'accounting' | 'percent' | 'scientific';
+  /** Digits after the decimal point, 0 to 10. */
+  decimals: number;
+  /** ISO currency code for currency and accounting, for example USD. */
+  currency?: string;
 }
 
 export interface TableDef {
@@ -452,6 +482,8 @@ export interface PageQuery {
   groupBy?: string;
   /** Ordered grouping. When absent, the page uses groupBy, ascending. */
   grouping?: GroupLevel[];
+  /** Order of records inside each group (or the whole list when ungrouped). First level wins, ties go to the next. */
+  sort?: GroupLevel[];
   columns?: string[];
 }
 
@@ -494,6 +526,7 @@ export interface TablePlacement {
 }
 
 export interface CardSettings {
+  /** Fields in the card header, in order. The first sits at the left; the rest sit together at the right. */
   titleFields: string[];
   expandedFields: string[];
   /** Cards per row, 1-10. */
@@ -518,6 +551,10 @@ export interface GanttSettings {
   columnWidths?: Record<string, number>;
   /** Width of the column pane in pixels, set by dragging the divider; absent = as wide as its columns. */
   paneWidth?: number;
+  /** Task fields shown as columns to the left of the chart; the task name always shows. Absent: name, assignee, status, to do. */
+  shownColumns?: string[];
+  /** Order of the tasks, set by clicking a column header. */
+  sort?: GroupLevel[];
   /**
    * Grouping of the tasks this gantt shows, for a page whose own table is not Task.
    * Absent means the gantt is still grouped by the linked record.
@@ -590,6 +627,8 @@ export interface ConditionalFormat {
   /** 'row' formats the whole row; otherwise the code of the one column to format. */
   applyTo: 'row' | string;
   style: FormatStyle;
+  /** Views the rule shows in. Absent: every view. */
+  views?: TableView[];
 }
 
 export interface TablePage extends PageBase {
@@ -601,8 +640,15 @@ export interface TablePage extends PageBase {
   cardSettings?: CardSettings;
   thumbSettings?: ThumbSettings;
   ganttSettings?: GanttSettings;
+  /**
+   * Text and multi-link fields that wrap in each place a view shows them (the table, a card header or body, inside or
+   * below a thumbnail): the whole value shows over several lines instead of being cut off. Saved with the page like its sort.
+   */
+  wrapFields?: Partial<Record<'table' | 'cardHeader' | 'cardBody' | 'kanbanHeader' | 'kanbanBody' | 'thumbInside' | 'thumbBelow', string[]>>;
+  /** Display settings a view keeps for itself (status display, number and date formats, sort, grouping). */
+  viewDisplay?: Partial<Record<'table' | 'card' | 'thumb' | 'kanban', ViewDisplay>>;
   /** Kanban, when this project has enabled it for the page's table. */
-  kanban?: { field?: string; columns?: number; fields?: string[] };
+  kanban?: { field?: string; columns?: number; fields?: string[]; headerFields?: string[]; order?: string[] };
 }
 
 export interface DashboardPage extends PageBase {

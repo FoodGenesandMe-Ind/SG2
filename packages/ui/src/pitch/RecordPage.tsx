@@ -1,12 +1,12 @@
 import type { EffectiveField, GroupLevel, TableView } from '@sgp/mock-data';
 import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { placeholderThumb } from './color';
-import { trackWidth, useColumnLayout } from './columns';
+import { nextSort, SortArrow, trackWidth, useColumnLayout } from './columns';
 import type { Direction } from './directions';
 import { Gantt, GanttZoomSlider, type GanttColumn, type GanttRow } from './Gantt';
 import { GroupDialog, type GroupField } from './GroupDialog';
 import { ColumnMenu } from './ColumnMenu';
-import { ConfigureFieldDialog, ManageColumnsDialog } from './ManageColumnsDialog';
+import { ConfigureFieldDialog, ManageFieldsDialog } from './ManageFieldsDialog';
 import { allGroupIds, groupByLevels, groupingLabel, idsAtDepth, useOpenSet, type DataGroup, type GroupBucket } from './grouping';
 import { Icon } from './Icon';
 import { HeaderSelectBox, RowTypeIcon, useRowSelection } from './selection';
@@ -21,6 +21,8 @@ export interface RecordColumn<T> {
   /** Numeric value for the Sum shown in the Total row. */
   sum?: (row: T) => number;
   sumFormat?: (total: number) => string;
+  /** What a click on the header sorts by, when the column's key is not a field of the record. */
+  sortValue?: (row: T) => string | number | null | undefined;
 }
 
 export interface RecordSpec<T> {
@@ -147,7 +149,20 @@ function RecordTable<T>({
     setOrder(columnKeys);
   }
   const [widths, setWidths] = useState<Record<string, number>>({});
+  const [sort, setSort] = useState<GroupLevel[]>([]);
   const columns = order.map((key) => spec.columns.find((c) => c.key === key)).filter((c): c is RecordColumn<T> => !!c);
+  const sortedRows = (rows: T[]) => {
+    const level = sort[0];
+    const column = level && spec.columns.find((c) => c.key === level.field);
+    if (!level || !column) return rows;
+    const valueOf = (row: T) => column.sortValue?.(row) ?? ((row as Record<string, unknown>)[column.key] as string | number | null | undefined) ?? '';
+    return [...rows].sort((a, b) => {
+      const x = valueOf(a);
+      const y = valueOf(b);
+      const order = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
+      return level.direction === 'desc' ? -order : order;
+    });
+  };
   const template = `1.75rem ${columns.map((c) => trackWidth(widths, c.key, c.width)).join(' ')}`;
   const selection = useRowSelection(spec.rows.map(spec.rowId));
   const summed = columns.filter((c) => c.sum);
@@ -178,19 +193,20 @@ function RecordTable<T>({
           {columns.map((c) => (
             <span
               key={c.key}
-              {...layout.headerProps(c.key, c.label)}
+              {...layout.headerProps(c.key, c.label, (key) => setSort((current) => nextSort(current, key)))}
               role="columnheader"
-              title="Drag to move, right-click for options"
+              title="Click to sort, drag to move, right-click for options"
               onContextMenu={(event) => {
                 if (!onHeaderContextMenu) return;
                 event.preventDefault();
                 onHeaderContextMenu(event, { key: c.key, label: c.label });
               }}
               className={`relative flex h-full min-w-0 cursor-grab items-center px-2 hover:bg-row-hover ${c.align === 'end' ? 'justify-end' : ''} ${
-                layout.movingCode === c.key ? 'bg-accent-subtle text-fg' : ''
+                layout.movingCode === c.key ? 'opacity-50' : ''
               }`}
             >
               <span className="truncate">{c.label}</span>
+              <SortArrow sort={sort} code={c.key} />
               {layout.handle(c.key, c.label)}
             </span>
           ))}
@@ -225,7 +241,7 @@ function RecordTable<T>({
         </div>
         {(() => {
           const rowsOf = (rows: T[]) =>
-            rows.map((row, i) => {
+            sortedRows(rows).map((row, i) => {
               const id = spec.rowId(row);
               const selected = selection.isSelected(id);
               return (
@@ -450,6 +466,7 @@ export function RecordPage<T>({
   const activeFields = (editingTasks && spec.gantt && 'taskFields' in spec.gantt ? spec.gantt.taskFields : spec.group?.fields) ?? [];
   const [groupOpen, setGroupOpen] = useState(false);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [fieldsStart, setFieldsStart] = useState<string | undefined>(undefined);
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string; label: string } | null>(null);
   const [configureField, setConfigureField] = useState<{ key: string; label: string } | null>(null);
   const [recordColumns, setRecordColumns] = useState<string[] | undefined>(undefined);
@@ -512,13 +529,16 @@ export function RecordPage<T>({
         <span className="ml-auto flex items-center">{controls}</span>
         <SearchField label={`Search ${spec.plural}`} />
         <button
-          className="flex size-7 items-center justify-center rounded-md border border-line-strong text-fg-muted hover:bg-row-hover hover:text-fg"
+          className="flex size-7 items-center justify-center rounded-md border border-line-strong text-fg-muted enabled:hover:bg-row-hover enabled:hover:text-fg disabled:cursor-default disabled:opacity-40"
           style={rowHeight}
-          aria-label="Manage columns"
-          title="Manage columns"
-          onClick={() => setColumnsOpen(true)}
+          aria-label="Manage fields"
+          title="Manage fields"
+          onClick={() => {
+            setFieldsStart(undefined);
+            setColumnsOpen(true);
+          }}
         >
-          <Icon name="columns-3" size={14} />
+          <Icon name="settings" size={14} />
         </button>
         <button
           className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-sm text-fg-muted hover:bg-row-hover hover:text-fg"
@@ -536,15 +556,13 @@ export function RecordPage<T>({
       </div>
       {body}
       {columnsOpen && (
-        <ManageColumnsDialog
+        <ManageFieldsDialog
           tableLabel={spec.plural}
+          initialField={fieldsStart}
           fields={spec.columns.map((column) => ({ code: column.key, label: column.label, type: 'text', hidden: false }) satisfies EffectiveField)}
           shown={shownColumns}
           canManage={false}
-          onApply={(shown) => {
-            setRecordColumns(shown);
-            setColumnsOpen(false);
-          }}
+          onSave={(shown) => setRecordColumns(shown)}
           onClose={() => setColumnsOpen(false)}
         />
       )}
@@ -553,7 +571,10 @@ export function RecordPage<T>({
           x={headerMenu.x}
           y={headerMenu.y}
           columnLabel={headerMenu.label}
-          onManageColumns={() => setColumnsOpen(true)}
+          onManageFields={() => {
+            setFieldsStart(headerMenu.key);
+            setColumnsOpen(true);
+          }}
           onConfigureField={() => setConfigureField({ key: headerMenu.key, label: headerMenu.label })}
           onClose={() => setHeaderMenu(null)}
         />

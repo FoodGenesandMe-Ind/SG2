@@ -72,6 +72,17 @@
   to { opacity: 0; }
 }
 
+@keyframes sgp-locked-notice {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.sgp-locked-notice {
+  animation: sgp-locked-notice 2.6s ease-out forwards;
+}
+
 .sgp-cell-flash {
   animation: sgp-cell-flash 0.9s ease-out forwards;
   pointer-events: none;

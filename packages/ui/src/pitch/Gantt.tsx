@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { trackWidth, useColumnLayout } from './columns';
+import type { GroupLevel } from '@sgp/mock-data';
+import { SortArrow, trackWidth, useColumnLayout } from './columns';
 import { Icon } from './Icon';
 import { HeaderSelectBox, RowTypeIcon, useRowSelection } from './selection';
 
@@ -132,6 +133,10 @@ export interface GanttLayout {
   widths?: Record<string, number>;
   /** Pane width in pixels; absent = exactly as wide as its columns. */
   pane?: number;
+  /** Task columns the page shows to the left of the chart; the task name always shows. Read by the task gantt. */
+  shown?: string[];
+  /** Order of the tasks, set by clicking a column header. Read by the task gantt. */
+  sort?: GroupLevel[];
 }
 
 const MIN_PANE = 120;
@@ -238,6 +243,8 @@ export function Gantt({
   labelOptions = [],
   layout: layoutProp,
   onLayout,
+  sort,
+  onSortColumn,
   onColumnContextMenu,
 }: {
   columns: GanttColumn[];
@@ -248,6 +255,9 @@ export function Gantt({
   /** Controlled layout (saved with the page); without it the gantt keeps its own. */
   layout?: GanttLayout;
   onLayout?: (layout: GanttLayout) => void;
+  /** The order of the rows, and a click on a column header to sort by it or reverse it. */
+  sort?: GroupLevel[];
+  onSortColumn?: (key: string) => void;
   onColumnContextMenu?: (event: ReactMouseEvent, column: { key: string; label: string }) => void;
 }) {
   const [ownLayout, setOwnLayout] = useState<GanttLayout>({});
@@ -427,20 +437,21 @@ export function Gantt({
             {placed.map(({ column: c }) => (
               <span
                 key={c.key}
-                {...columnLayout.headerProps(c.key, c.label)}
+                {...columnLayout.headerProps(c.key, c.label, onSortColumn)}
                 role="columnheader"
-                title="Drag to move, right-click for options"
+                title={onSortColumn ? 'Click to sort, drag to move, right-click for options' : 'Drag to move, right-click for options'}
                 onContextMenu={(event) => {
                   if (!onColumnContextMenu) return;
                   event.preventDefault();
                   onColumnContextMenu(event, { key: c.key, label: c.label });
                 }}
                 className={`relative flex min-w-0 cursor-grab items-center px-2 hover:bg-row-hover ${
-                  columnLayout.movingCode === c.key ? 'bg-accent-subtle text-fg' : ''
+                  columnLayout.movingCode === c.key ? 'opacity-50' : ''
                 }`}
                 style={rowHeight}
               >
                 <span className="truncate">{c.label}</span>
+                <SortArrow sort={sort} code={c.key} />
                 {columnLayout.handle(c.key, c.label)}
               </span>
             ))}

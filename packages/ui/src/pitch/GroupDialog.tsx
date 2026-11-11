@@ -1,6 +1,7 @@
 import type { GroupLevel } from '@sgp/mock-data';
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
+import { useReorder } from './reorder';
 
 const MAX_LEVELS = 10;
 const height = { height: 'var(--sgp-row-compact)' };
@@ -16,15 +17,132 @@ function keyed(level: GroupLevel): DraftLevel {
   return { ...level, key: `level-${levelKey}` };
 }
 
+const plain = (rows: GroupLevel[]) => rows.map(({ field, direction }) => ({ field, direction }));
+const orderOf = (rows: GroupLevel[]) => JSON.stringify(plain(rows));
+
 export interface GroupField {
   code: string;
   label: string;
 }
 
-/** Ordered grouping for a table page. Apply is inactive until the list changes. */
+/**
+ * An ordered list of fields, each ascending or descending, reordered by dragging a grip.
+ * Used for grouping (up to ten levels) and for sorting (no limit).
+ */
+function LevelList({
+  name,
+  rows,
+  onRows,
+  fields,
+  firstLabel,
+  nextLabel,
+  max,
+  addLabel,
+  empty,
+}: {
+  name: string;
+  rows: DraftLevel[];
+  onRows: (rows: DraftLevel[]) => void;
+  fields: GroupField[];
+  firstLabel: string;
+  nextLabel: string;
+  max?: number;
+  addLabel: string;
+  empty: string;
+}) {
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const reorder = useReorder({
+    ids: rows.map((row) => row.key),
+    onReorder: (keys) => set(keys.map((key) => rowsRef.current.find((row) => row.key === key)!)),
+  });
+  const used = new Set(rows.map((level) => level.field));
+  const unused = fields.filter((field) => !used.has(field.code));
+  const full = max !== undefined && rows.length >= max;
+  const set = (next: DraftLevel[]) => {
+    rowsRef.current = next;
+    onRows(next);
+  };
+  const update = (key: string, change: Partial<GroupLevel>) => set(rowsRef.current.map((row) => (row.key === key ? { ...row, ...change } : row)));
+  const labelOf = (code: string) => fields.find((field) => field.code === code)?.label ?? 'level';
+
+  return (
+    <div className="flex flex-col gap-2" data-level-list={name}>
+      {rows.length === 0 && <p className="text-sm text-fg-subtle">{empty}</p>}
+      <div ref={reorder.listRef} className="relative flex flex-col gap-2">
+      {reorder.indicator}
+      {rows.map((level, index) => {
+        const options = fields.filter((field) => field.code === level.field || !used.has(field.code));
+        return (
+          <div key={level.key} {...reorder.itemProps(level.key)} data-level className={`flex items-center gap-2 rounded-md transition-opacity ${reorder.dimClass(level.key)}`}>
+            <button
+              className="flex size-7 shrink-0 cursor-grab items-center justify-center rounded-sm text-fg-subtle hover:bg-row-hover hover:text-fg active:cursor-grabbing"
+              aria-label={`Drag ${labelOf(level.field)} to reorder`}
+              title="Drag to reorder"
+              onPointerDown={(event) => reorder.startDrag(level.key, event)}
+            >
+              <Icon name="grip-vertical" size={14} />
+            </button>
+            <span className="w-16 shrink-0 text-sm text-fg-muted">{index === 0 ? firstLabel : nextLabel}</span>
+            <select
+              aria-label={index === 0 ? firstLabel : `${nextLabel} ${index}`}
+              className={`${control} flex-1`}
+              style={height}
+              value={level.field}
+              onChange={(event) => update(level.key, { field: event.target.value })}
+            >
+              {options.map((field) => (
+                <option key={field.code} value={field.code}>
+                  {field.label}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Direction"
+              className={`${control} w-36 shrink-0`}
+              style={height}
+              value={level.direction}
+              onChange={(event) => update(level.key, { direction: event.target.value as GroupLevel['direction'] })}
+            >
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+            <button
+              className="flex size-7 items-center justify-center rounded-sm text-fg-subtle hover:bg-row-hover hover:text-danger"
+              aria-label={`Remove ${labelOf(level.field)}`}
+              onClick={() => set(rowsRef.current.filter((row) => row.key !== level.key))}
+            >
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        );
+      })}
+      </div>
+      <button
+        className={`mt-1 flex items-center gap-1.5 self-start rounded-md px-3 text-sm font-medium text-fg-inverse ${unused.length > 0 && !full ? 'bg-accent hover:bg-accent-hover' : 'cursor-default bg-accent opacity-40'}`}
+        style={height}
+        disabled={unused.length === 0 || full}
+        title={full ? 'Ten levels is the most' : unused.length === 0 ? 'Every field is already used' : addLabel}
+        onClick={() => {
+          const current = rowsRef.current;
+          if (max !== undefined && current.length >= max) return;
+          const taken = new Set(current.map((row) => row.field));
+          const next = fields.find((field) => !taken.has(field.code));
+          if (next) set([...current, keyed({ field: next.code, direction: 'asc' })]);
+        }}
+      >
+        <Icon name="plus" /> {addLabel}
+      </button>
+    </div>
+  );
+}
+
+/** Ordered grouping for a table page, and the sort inside each group. Apply is inactive until something changes. */
 export function GroupDialog({
   levels,
   fields,
+  sort,
+  sortFields,
   note,
   savedWithPage = false,
   onApply,
@@ -32,21 +150,20 @@ export function GroupDialog({
 }: {
   levels: GroupLevel[];
   fields: GroupField[];
+  /** The current sort. When present (with sortFields), the dialog also edits it. */
+  sort?: GroupLevel[];
+  sortFields?: GroupField[];
   /** Where this grouping shows, when a view on the page does not use it. */
   note?: string;
   /** The grouping can be saved onto the page. Viewing it does not require that permission. */
   savedWithPage?: boolean;
-  onApply: (levels: GroupLevel[]) => void;
+  onApply: (levels: GroupLevel[], sort?: GroupLevel[]) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<DraftLevel[]>(() => levels.map(keyed));
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
-  const orderOf = (rows: GroupLevel[]) => JSON.stringify(rows.map(({ field, direction }) => ({ field, direction })));
-  const dirty = orderOf(draft) !== orderOf(levels);
-  const used = new Set(draft.map((level) => level.field));
-  const unused = fields.filter((field) => !used.has(field.code));
-  const [dragging, setDragging] = useState<string | null>(null);
+  const [sortDraft, setSortDraft] = useState<DraftLevel[]>(() => (sort ?? []).map(keyed));
+  const sorting = sort !== undefined && sortFields !== undefined;
+  const dirty = orderOf(draft) !== orderOf(levels) || (sorting && orderOf(sortDraft) !== orderOf(sort ?? []));
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -55,46 +172,6 @@ export function GroupDialog({
     window.addEventListener('keydown', close);
     return () => window.removeEventListener('keydown', close);
   }, [onClose]);
-
-  const update = (key: string, change: Partial<GroupLevel>) =>
-    setDraft((rows) => rows.map((row) => (row.key === key ? { ...row, ...change } : row)));
-
-  const startDrag = (key: string, event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    const grip = event.currentTarget;
-    try {
-      grip.setPointerCapture(event.pointerId);
-    } catch {
-      // Capture is unavailable for some synthetic events; the move listener still follows the grip.
-    }
-    let from = draftRef.current.findIndex((row) => row.key === key);
-    setDragging(key);
-    const move = (e: PointerEvent) => {
-      const rows = [...grip.closest('[role=dialog]')!.querySelectorAll<HTMLElement>('[data-group-level]')];
-      let target = rows.length - 1;
-      for (let i = 0; i < rows.length; i++) {
-        const box = rows[i].getBoundingClientRect();
-        if (e.clientY < box.top + box.height / 2) {
-          target = i;
-          break;
-        }
-      }
-      if (target === from) return;
-      const next = [...draftRef.current];
-      const [item] = next.splice(from, 1);
-      next.splice(target, 0, item);
-      draftRef.current = next;
-      from = target;
-      setDraft(next);
-    };
-    const stop = () => {
-      grip.removeEventListener('pointermove', move);
-      grip.removeEventListener('pointerup', stop);
-      setDragging(null);
-    };
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', stop);
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-canvas/60 pt-16" onMouseDown={onClose}>
@@ -108,80 +185,46 @@ export function GroupDialog({
         <header className="flex items-start gap-3 border-b border-line px-4 py-3">
           <Icon name="sliders-horizontal" size={18} className="mt-0.5 text-fg-subtle" />
           <div className="flex flex-col">
-            <h2 className="text-lg font-semibold">Group</h2>
-            <p className="text-sm text-fg-muted">Records stack in this order. Each group keeps its summary.</p>
+            <h2 className="text-lg font-semibold">{sorting ? 'Group and sort' : 'Group'}</h2>
+            <p className="text-sm text-fg-muted">
+              {sorting ? 'Records stack in groups, and sort inside each group. Each group keeps its summary.' : 'Records stack in this order. Each group keeps its summary.'}
+            </p>
           </div>
           <button className="ml-auto text-fg-subtle hover:text-fg" aria-label="Close" onClick={onClose}>
             <Icon name="x" />
           </button>
         </header>
 
-        <div className="flex flex-col gap-2 overflow-y-auto px-4 py-3">
-          {draft.length === 0 && <p className="text-sm text-fg-subtle">Not grouped. Add a level to stack the records.</p>}
-          {draft.map((level, index) => {
-            const options = fields.filter((field) => field.code === level.field || !used.has(field.code));
-            return (
-              <div key={level.key} data-group-level className={`flex items-center gap-2 rounded-md ${dragging === level.key ? 'bg-row-hover' : ''}`}>
-                <button
-                  className="flex size-7 shrink-0 cursor-grab items-center justify-center rounded-sm text-fg-subtle hover:bg-row-hover hover:text-fg active:cursor-grabbing"
-                  aria-label={`Drag ${fields.find((field) => field.code === level.field)?.label ?? 'level'} to reorder`}
-                  title="Drag to reorder"
-                  onPointerDown={(event) => startDrag(level.key, event)}
-                >
-                  <Icon name="grip-vertical" size={14} />
-                </button>
-                <span className="w-16 shrink-0 text-sm text-fg-muted">{index === 0 ? 'Group by' : 'Then by'}</span>
-                <select
-                  aria-label={index === 0 ? 'Group by' : `Then by ${index}`}
-                  className={`${control} flex-1`}
-                  style={height}
-                  value={level.field}
-                  onChange={(event) => update(level.key, { field: event.target.value })}
-                >
-                  {options.map((field) => (
-                    <option key={field.code} value={field.code}>
-                      {field.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Direction"
-                  className={`${control} w-36 shrink-0`}
-                  style={height}
-                  value={level.direction}
-                  onChange={(event) => update(level.key, { direction: event.target.value as GroupLevel['direction'] })}
-                >
-                  <option value="asc">Ascending</option>
-                  <option value="desc">Descending</option>
-                </select>
-                <button
-                  className="flex size-7 items-center justify-center rounded-sm text-fg-subtle hover:bg-row-hover hover:text-danger"
-                  aria-label={`Remove ${fields.find((field) => field.code === level.field)?.label ?? 'level'}`}
-                  onClick={() => setDraft((rows) => rows.filter((row) => row.key !== level.key))}
-                >
-                  <Icon name="x" size={14} />
-                </button>
-              </div>
-            );
-          })}
-          <button
-            className={`mt-1 flex items-center gap-1.5 self-start rounded-md px-3 text-sm font-medium text-fg-inverse ${unused.length > 0 && draft.length < MAX_LEVELS ? 'bg-accent hover:bg-accent-hover' : 'cursor-default bg-accent opacity-40'}`}
-            style={height}
-            disabled={unused.length === 0 || draft.length >= MAX_LEVELS}
-            title={draft.length >= MAX_LEVELS ? 'Ten levels is the most' : unused.length === 0 ? 'Every field is already used' : 'Add a grouping level'}
-            onClick={() => {
-              const rows = draftRef.current;
-              if (rows.length >= MAX_LEVELS) return;
-              const taken = new Set(rows.map((row) => row.field));
-              const next = fields.find((field) => !taken.has(field.code));
-              if (!next) return;
-              const updated = [...rows, keyed({ field: next.code, direction: 'asc' })];
-              draftRef.current = updated;
-              setDraft(updated);
-            }}
-          >
-            <Icon name="plus" /> Add level
-          </button>
+        <div className="flex flex-col gap-3 overflow-y-auto px-4 py-3">
+          <section className="flex flex-col gap-2" aria-label="Grouping">
+            {sorting && <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Group</h3>}
+            <LevelList
+              name="group"
+              rows={draft}
+              onRows={setDraft}
+              fields={fields}
+              firstLabel="Group by"
+              nextLabel="Then by"
+              max={MAX_LEVELS}
+              addLabel="Add level"
+              empty="Not grouped. Add a level to stack the records."
+            />
+          </section>
+          {sorting && (
+            <section className="flex flex-col gap-2 border-t border-line pt-3" aria-label="Sorting">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Sort</h3>
+              <LevelList
+                name="sort"
+                rows={sortDraft}
+                onRows={setSortDraft}
+                fields={sortFields!}
+                firstLabel="Sort by"
+                nextLabel="Then by"
+                addLabel="Add sort"
+                empty="Not sorted. Records keep the order they were created in."
+              />
+            </section>
+          )}
           {note && <p className="text-xs text-fg-subtle">{note}</p>}
         </div>
 
@@ -201,7 +244,7 @@ export function GroupDialog({
             style={height}
             disabled={!dirty}
             onClick={() => {
-              onApply(draft.map(({ field, direction }) => ({ field, direction })));
+              onApply(plain(draft), sorting ? plain(sortDraft) : undefined);
               onClose();
             }}
           >

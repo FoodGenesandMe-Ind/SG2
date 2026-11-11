@@ -12,10 +12,12 @@ import {
   type StatusDisplay,
   type TablePage,
   type TableView,
+  type ViewDisplay,
 } from '@sgp/mock-data';
 import { useCallback, useState, type MouseEvent, type ReactNode } from 'react';
 import { ColumnMenu } from './ColumnMenu';
-import { ConfigureFieldDialog, ManageColumnsDialog } from './ManageColumnsDialog';
+import { ManageFieldsDialog, type DraftField } from './ManageFieldsDialog';
+import { resolveReplacement } from './StatusConfig';
 import { ConditionalFormatDialog } from './ConditionalFormatDialog';
 import { ComponentStrip } from './ComponentStrip';
 import type { Direction } from './directions';
@@ -32,7 +34,10 @@ import { DashboardPage } from './Dashboard';
 import { IssueDetail } from './IssueDetail';
 import { ShotGridSpecimen } from './ShotGridSpecimen';
 import { kanbanFields, ShotCardsView, ShotKanbanView, ShotThumbsView } from './ShotViews';
-import { getTasksPage, TASKS_PAGE_ID, TasksGantt, TasksTable } from './TasksPage';
+import { DEFAULT_GANTT_COLUMNS, getTasksPage, TASKS_PAGE_ID, TasksGantt, TasksTable } from './TasksPage';
+import { canWrap, toggleWrap, type WrapPlace } from './wrap';
+import { isShotView, VIEW_NAME, withViewDisplay, type ShotView } from './viewDisplay';
+import { nextSort } from './columns';
 import { tasks as allTasks } from '@sgp/mock-data';
 import { AddButton, CardColumnsPicker, clampColumns, clampKanbanColumns, KANBAN_COLUMNS, SearchField, ThumbSizeSlider, ViewSwitcher } from './PageControls';
 import {
@@ -47,7 +52,7 @@ import {
 } from './recordActions';
 import { ganttGroupingProps, isGroupable, groupingLabel, taskGroupFields } from './grouping';
 import { GroupDialog } from './GroupDialog';
-import { getShotsPage, viewsFor, withGrouping, withShotEdits, withShotPatches } from './shotsPage';
+import { getShotsPage, viewsFor, withGrouping, withShotEdits, withShotPatches, withSort } from './shotsPage';
 
 const SHOTS_PAGE_ID = 'pg-lmp-shots';
 const DASHBOARD_PAGE_ID = 'pg-lmp-producer-dashboard';
@@ -108,7 +113,7 @@ function PageHeader({
   controls,
   groupingLabel,
   onGroup,
-  onManageColumns,
+  onManageFields,
 }: {
   title: string;
   folder: string;
@@ -123,7 +128,8 @@ function PageHeader({
   /** Fields the page is grouped by, in order. Absent when it is not grouped. */
   groupingLabel?: string;
   onGroup: () => void;
-  onManageColumns: () => void;
+  /** Opens Manage fields at the section for the current view. */
+  onManageFields: () => void;
 }) {
   const height = { height: 'var(--sgp-row-compact)' };
   return (
@@ -142,13 +148,13 @@ function PageHeader({
         <span className="ml-auto flex items-center">{controls}</span>
         <SearchField label={searchLabel} />
         <button
-          className="flex size-7 items-center justify-center rounded-md border border-line-strong text-fg-muted hover:bg-row-hover hover:text-fg"
+          className="flex size-7 items-center justify-center rounded-md border border-line-strong text-fg-muted enabled:hover:bg-row-hover enabled:hover:text-fg disabled:cursor-default disabled:opacity-40"
           style={height}
-          aria-label="Manage columns"
-          title="Manage columns"
-          onClick={onManageColumns}
+          aria-label="Manage fields"
+          title="Manage fields"
+          onClick={onManageFields}
         >
-          <Icon name="columns-3" size={14} />
+          <Icon name="settings" size={14} />
         </button>
         <button
           className="inline-flex items-center gap-1.5 rounded-md border border-line-strong px-2.5 text-sm text-fg-muted hover:bg-row-hover hover:text-fg"
@@ -196,6 +202,8 @@ export interface SpecimenProps {
   initialFormatColumn?: string;
   /** Project-wide formats for Shots in this project. */
   initialProjectFormats?: ConditionalFormat[];
+  /** Opens Manage fields on load. */
+  initialFieldsOpen?: boolean;
 }
 
 export function Specimen({
@@ -213,6 +221,7 @@ export function Specimen({
   initialFormats,
   initialFormatColumn,
   initialProjectFormats,
+  initialFieldsOpen = false,
 }: SpecimenProps) {
   const baseShotsPage = getShotsPage();
   const [shotPatches, setShotPatches] = useState<Record<string, Partial<Shot>>>({});
@@ -220,11 +229,11 @@ export function Specimen({
   const [removedShotIds, setRemovedShotIds] = useState<string[]>([]);
   const shotsEdited = withShotEdits(baseShotsPage, addedShots, removedShotIds);
   const [groupOpen, setGroupOpen] = useState(false);
-  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [fieldsOpen, setFieldsOpen] = useState(initialFieldsOpen);
   const [customFields, setCustomFields] = useState<EffectiveField[]>([]);
   const [removedFieldCodes, setRemovedFieldCodes] = useState<string[]>([]);
   const [fieldPatches, setFieldPatches] = useState<Record<string, Partial<EffectiveField>>>({});
-  const [configure, setConfigure] = useState<{ code: string; table: 'Shot' | 'Task' } | null>(null);
+  const [fieldsStart, setFieldsStart] = useState<string | undefined>(undefined);
   const [locks, setLocks] = useState<Record<string, 'locked' | 'system'>>({ sh010_10: 'locked', sh030_30: 'system' });
   const copiedShots = useCopiedShots();
   const [shotMenu, setShotMenu] = useState<
@@ -274,7 +283,16 @@ export function Specimen({
   const [pageId, setPageId] = useState(
     initialPage === 'tasks' ? TASKS_PAGE_ID : initialPage === 'dashboard' ? DASHBOARD_PAGE_ID : SHOTS_PAGE_ID,
   );
-  const shotsPage = withGrouping(withShotPatches(shotsEdited, shotPatches), drafts[SHOTS_PAGE_ID].grouping);
+  const shotsSort = drafts[SHOTS_PAGE_ID].sort ?? baseShotsPage.page.query.sort ?? [];
+  // Field edits (status order, formulas) apply before sorting and grouping, so both follow them.
+  const patchedFields = shotsEdited.fields.map((field) => ({ ...field, ...fieldPatches[field.code] }));
+  const sortFields = [...patchedFields, ...customFields];
+  const shotsBase = {
+    ...withShotPatches(shotsEdited, shotPatches),
+    fields: patchedFields,
+    fieldByCode: (code: string) => patchedFields.find((field) => field.code === code),
+  };
+  const shotsPage = withGrouping(withSort(shotsBase, shotsSort, sortFields), drafts[SHOTS_PAGE_ID].grouping);
   const tablePage = (id: string) =>
     id === SHOTS_PAGE_ID ? shotsPage.page : id === TASKS_PAGE_ID ? tasksPage.page : extraPages.find((p) => p.id === id);
   const current = tablePage(pageId);
@@ -293,21 +311,57 @@ export function Specimen({
     else if (command === 'export') exportShotsCsv(shotClip(shotsPage, shots, statusDisplay));
     else setRecordConfirm({ kind: 'delete', shots });
   };
+  // A card, kanban card, or thumbnail shows a field in one place: showing it in one part takes it out of the other.
+  const placeIn = (list: string[], other: string[], code: string) =>
+    list.includes(code) ? { list: list.filter((item) => item !== code), other } : { list: [...list, code], other: other.filter((item) => item !== code) };
   const toggleCardBody = (code: string) =>
-    update((layout) => ({ cardBody: layout.cardBody.includes(code) ? layout.cardBody.filter((item) => item !== code) : [...layout.cardBody, code] }));
+    update((layout) => {
+      const { list, other } = placeIn(layout.cardBody ?? draft.cardBody, layout.cardHeader ?? draft.cardHeader, code);
+      return { cardBody: list, cardHeader: other };
+    });
   const toggleKanbanBody = (code: string) =>
     update((layout) => {
-      const body = layout.kanbanBody ?? draft.kanbanBody ?? [];
-      return { kanbanBody: body.includes(code) ? body.filter((item) => item !== code) : [...body, code] };
+      const { list, other } = placeIn(layout.kanbanBody ?? draft.kanbanBody ?? [], layout.kanbanHeader ?? draft.kanbanHeader, code);
+      return { kanbanBody: list, kanbanHeader: other };
+    });
+  /** Who may edit shots, and each shot's lock: shared by the table, cards, kanban, and thumbnails. */
+  const recordEditProps = {
+    lockOf: (id: string) => locks[id] ?? 'open',
+    onEditShot: permissionsFor(viewerId).readOnly
+      ? undefined
+      : (id: string, patch: Partial<Shot>) => setShotPatches((all) => ({ ...all, [id]: { ...all[id], ...patch } })),
+    onToggleLock: permissionsFor(viewerId).managesSchema
+      ? (id: string) =>
+          setLocks((all) => {
+            const currentLock = all[id] ?? 'open';
+            if (currentLock === 'system') return all;
+            const next = { ...all };
+            if (currentLock === 'locked') delete next[id];
+            else next[id] = 'locked';
+            return next;
+          })
+      : undefined,
+  };
+  const toggleCardHeader = (code: string) =>
+    update((layout) => {
+      const { list, other } = placeIn(layout.cardHeader ?? draft.cardHeader, layout.cardBody ?? draft.cardBody, code);
+      return { cardHeader: list, cardBody: other };
+    });
+  const toggleKanbanHeader = (code: string) =>
+    update((layout) => {
+      const { list, other } = placeIn(layout.kanbanHeader ?? draft.kanbanHeader, layout.kanbanBody ?? draft.kanbanBody ?? [], code);
+      return { kanbanHeader: list, kanbanBody: other };
     });
   const placeThumbField = (zone: 'inside' | 'below', code: string) =>
     update((layout) => {
-      const on = (zone === 'inside' ? layout.thumbInside : layout.thumbBelow).includes(code);
-      return {
-        thumbInside: zone === 'inside' && !on ? [...layout.thumbInside.filter((item) => item !== code), code] : layout.thumbInside.filter((item) => item !== code),
-        thumbBelow: zone === 'below' && !on ? [...layout.thumbBelow.filter((item) => item !== code), code] : layout.thumbBelow.filter((item) => item !== code),
-      };
+      if (zone === 'inside') {
+        const { list, other } = placeIn(layout.thumbInside, layout.thumbBelow, code);
+        return { thumbInside: list, thumbBelow: other };
+      }
+      const { list, other } = placeIn(layout.thumbBelow, layout.thumbInside, code);
+      return { thumbBelow: list, thumbInside: other };
     });
+  const toggleWrapIn = (place: WrapPlace, code: string) => update((layout) => ({ wrap: toggleWrap(layout.wrap ?? draft.wrap, place, code) }));
   const columnProps = {
     columnOrder: draft.columns,
     columnWidths: draft.widths,
@@ -327,6 +381,7 @@ export function Specimen({
     ...customFields,
     ...(canManageSchema ? [lockedField] : []),
   ];
+  const wrapColumn = !!menu && page === 'shots' && draft.view === 'table' && canWrap(manageFields.find((field) => field.code === menu.field));
   const taskFields = (resolveTableConfig('Task', PROJECT_ID)?.fields ?? []).map((field) => ({
     ...field,
     hidden: false,
@@ -339,21 +394,45 @@ export function Specimen({
       if (Array.isArray(value)) return value.length > 0;
       return true;
     });
-  const dropField = (code: string) => {
-    setRemovedFieldCodes((list) => (list.includes(code) ? list : [...list, code]));
-    setCustomFields((list) => list.filter((field) => field.code !== code));
-    update((layout) => ({
-      columns: layout.columns.filter((item) => item !== code),
-      cardBody: (layout.cardBody ?? []).filter((item) => item !== code),
-      thumbInside: (layout.thumbInside ?? []).filter((item) => item !== code),
-      thumbBelow: (layout.thumbBelow ?? []).filter((item) => item !== code),
-      kanbanBody: (layout.kanbanBody ?? []).filter((item) => item !== code),
-      grouping: (layout.grouping ?? []).filter((level) => level.field !== code),
-      taskGrouping: (layout.taskGrouping ?? []).filter((level) => level.field !== code),
-      ...(layout.kanbanField === code ? { kanbanField: 'status' } : {}),
-    }));
+  const valueCount = (records: ReadonlyArray<object>, code: string, value: string) =>
+    records.filter((record) => (record as Record<string, unknown>)[code] === value).length;
+  /** Shots on a status that was hidden move to the replacement the user picked. */
+  const moveHiddenStatuses = (field: DraftField) => {
+    const replacements = field.statusReplacements;
+    if (!replacements) return;
+    const moves = shotsPage.allShots
+      .map((shot) => {
+        const from = String(shot[field.code as keyof Shot] ?? '');
+        return replacements[from] ? { id: shot.id, to: resolveReplacement(from, replacements) } : null;
+      })
+      .filter((move): move is { id: string; to: string } => !!move);
+    if (moves.length === 0) return;
+    setShotPatches((all) => {
+      const next = { ...all };
+      for (const move of moves) next[move.id] = { ...next[move.id], [field.code]: move.to };
+      return next;
+    });
   };
-  const gridPage = { ...shotsPage, fields: manageFields, fieldByCode: (code: string) => manageFields.find((field) => field.code === code) };
+  // Each view of the shots can keep its own sort, grouping, status display, and number and date formats.
+  const shotView: ShotView | null = isShotView(draft.view) ? draft.view : null;
+  const sortFor = (view: ShotView) => draft.viewDisplay?.[view]?.sort ?? shotsSort;
+  const groupingFor = (view: ShotView) => draft.viewDisplay?.[view]?.grouping ?? draft.grouping;
+  const statusFor = (view: ShotView) => draft.viewDisplay?.[view]?.statusDisplay ?? statusDisplay;
+  const formatsIn = (view: TableView) => [...draft.formats, ...projectFormats].filter((rule) => !rule.views || rule.views.includes(view));
+  const setViewDisplay = (view: ShotView, change: (current: ViewDisplay) => ViewDisplay) =>
+    update((layout) => ({ viewDisplay: withViewDisplay(layout.viewDisplay ?? draft.viewDisplay, view, change) }));
+  const viewPage = (view: ShotView) => {
+    const own = draft.viewDisplay?.[view];
+    const shaped = (field: EffectiveField): EffectiveField => ({
+      ...field,
+      ...(own?.numberDisplay?.[field.code] ? { display: own.numberDisplay[field.code] } : {}),
+      ...(own?.dateFormat?.[field.code] ? { dateFormat: own.dateFormat[field.code] } : {}),
+    });
+    const ordered = own?.sort || own?.grouping ? withGrouping(withSort(shotsBase, sortFor(view), sortFields), groupingFor(view)) : shotsPage;
+    const fields = manageFields.map(shaped);
+    return { ...ordered, fields, fieldByCode: (code: string) => fields.find((field) => field.code === code) };
+  };
+  const currentGrouping = page === 'shots' && shotView ? groupingFor(shotView) : draft.grouping;
   const projectScope = { level: 'project' as const, projectId: PROJECT_ID };
   const projectFolders = folders.filter((f) => sameScope(f.scope, projectScope));
   const folderLabel = (p: TablePage) =>
@@ -380,6 +459,14 @@ export function Specimen({
     const rest = groupable.filter((field) => !draft.columns.includes(field.code)).sort((a, b) => a.label.localeCompare(b.label));
     const fields = [...inColumns, ...rest].map((field) => ({ code: field.code, label: field.label }));
     return current?.query.table === 'Task' ? [{ code: 'departmentId', label: 'Department' }, ...fields] : fields;
+  };
+
+  /** Any shot field except the thumbnail and the lock: page columns first, then the rest by name. */
+  const shotSortFields = () => {
+    const sortable = manageFields.filter((field) => field.type !== 'media' && field.code !== 'locked');
+    const inColumns = draft.columns.map((code) => sortable.find((field) => field.code === code)).filter((field): field is NonNullable<typeof field> => !!field);
+    const rest = sortable.filter((field) => !draft.columns.includes(field.code)).sort((a, b) => a.label.localeCompare(b.label));
+    return [...inColumns, ...rest].map((field) => ({ code: field.code, label: field.label }));
   };
 
   const saveCopy = (name: string, where: Pick<TablePage, 'shared' | 'folderId'>) => {
@@ -484,8 +571,8 @@ export function Specimen({
           folder={current ? folderLabel(current) : 'Production'}
           pageMenu={pageMenu}
           summary={
-            draft.grouping.length
-              ? `${shotsPage.allShots.length} shots grouped by ${groupingLabel(draft.grouping, fieldLabel)}`
+            currentGrouping.length
+              ? `${shotsPage.allShots.length} shots grouped by ${groupingLabel(currentGrouping, fieldLabel)}`
               : `${shotsPage.allShots.length} shots, not grouped`
           }
           searchLabel="Search shots"
@@ -494,33 +581,26 @@ export function Specimen({
           view={draft.view}
           onView={setView}
           controls={controls}
-          groupingLabel={groupingLabel(ganttIsTasks ? draft.taskGrouping : draft.grouping, fieldLabel) || undefined}
+          groupingLabel={groupingLabel(ganttIsTasks ? draft.taskGrouping : currentGrouping, fieldLabel) || undefined}
           onGroup={() => setGroupOpen(true)}
-          onManageColumns={() => setColumnsOpen(true)}
+          onManageFields={() => setFieldsOpen(true)}
         />
         {draft.view === 'table' && (
           <ShotGridSpecimen
             direction={direction}
-            statusDisplay={statusDisplay}
-            shotsPage={gridPage}
+            statusDisplay={statusFor('table')}
+            shotsPage={viewPage('table')}
+            sort={sortFor('table')}
+            onSortColumn={(code) => setViewDisplay('table', (own) => ({ ...own, sort: nextSort(sortFor('table'), code) }))}
+            wrapFields={draft.wrap.table}
             lockOf={(id) => locks[id] ?? 'open'}
-            onToggleLock={
-              canManageSchema
-                ? (id) =>
-                    setLocks((all) => {
-                      const currentLock = all[id] ?? 'open';
-                      if (currentLock === 'system') return all;
-                      const next = { ...all };
-                      if (currentLock === 'locked') delete next[id];
-                      else next[id] = 'locked';
-                      return next;
-                    })
-                : undefined
-            }
+            onToggleLock={recordEditProps.onToggleLock}
             {...columnProps}
-            formats={[...draft.formats, ...projectFormats]}
+            formats={formatsIn('table')}
             onOpenShot={openShot}
-            onEditShot={(id, patch) => setShotPatches((all) => ({ ...all, [id]: { ...all[id], ...patch } }))}
+            onEditShot={
+              permissionsFor(viewerId).readOnly ? undefined : (id, patch) => setShotPatches((all) => ({ ...all, [id]: { ...all[id], ...patch } }))
+            }
             recordActions={recordActions}
             onColumnContextMenu={(event, field) =>
               setMenu({ x: event.clientX, y: event.clientY, field: field.code, label: field.label })
@@ -530,44 +610,59 @@ export function Specimen({
         {draft.view === 'card' && (
           <ShotCardsView
             direction={direction}
-            statusDisplay={statusDisplay}
+            statusDisplay={statusFor('card')}
             columns={draft.cardColumns}
             onOpenShot={openShot}
-            shotsPage={gridPage}
+            shotsPage={viewPage('card')}
             recordActions={recordActions}
-            formats={[...draft.formats, ...projectFormats]}
+            formats={formatsIn('card')}
             bodyFields={draft.cardBody}
             onToggleBody={toggleCardBody}
+            headerFields={draft.cardHeader}
+            onToggleHeader={toggleCardHeader}
+            wrap={draft.wrap}
+            onToggleWrap={toggleWrapIn}
+            {...recordEditProps}
             onCommand={onShotCommand}
           />
         )}
         {draft.view === 'thumb' && (
           <ShotThumbsView
             direction={direction}
-            statusDisplay={statusDisplay}
+            statusDisplay={statusFor('thumb')}
             size={draft.thumbSize}
             onOpenShot={openShot}
-            shotsPage={gridPage}
+            shotsPage={viewPage('thumb')}
             recordActions={recordActions}
-            formats={[...draft.formats, ...projectFormats]}
+            formats={formatsIn('thumb')}
             insideFields={draft.thumbInside}
             belowFields={draft.thumbBelow}
             onPlace={placeThumbField}
+            wrap={draft.wrap}
+            onToggleWrap={toggleWrapIn}
+            {...recordEditProps}
             onCommand={onShotCommand}
           />
         )}
         {draft.view === 'kanban' && (
           <ShotKanbanView
             direction={direction}
-            statusDisplay={statusDisplay}
+            statusDisplay={statusFor('kanban')}
             fieldCode={draft.kanbanField}
             visibleColumns={draft.kanbanColumns}
             onOpenShot={openShot}
-            shotsPage={gridPage}
+            shotsPage={viewPage('kanban')}
             recordActions={recordActions}
-            formats={[...draft.formats, ...projectFormats]}
+            formats={formatsIn('kanban')}
             bodyFields={draft.kanbanBody}
             onToggleBody={toggleKanbanBody}
+            headerFields={draft.kanbanHeader}
+            onToggleHeader={toggleKanbanHeader}
+            cardOrder={draft.kanbanOrder}
+            onCardOrder={(kanbanOrder) => update(() => ({ kanbanOrder }))}
+            wrap={draft.wrap}
+            onToggleWrap={toggleWrapIn}
+            {...recordEditProps}
             onCommand={onShotCommand}
           />
         )}
@@ -585,7 +680,7 @@ export function Specimen({
               statusDisplay={statusDisplay}
               zoom={draft.zoom}
               taskList={allTasks.filter((t) => t.entityType === 'Shot' && shotsPage.allShots.some((s) => s.id === t.entityId))}
-              formats={[...draft.formats, ...projectFormats]}
+              formats={formatsIn('gantt')}
               {...ganttGroupingProps(draft.taskGrouping, true)}
               {...ganttProps}
               onColumnContextMenu={(event, column) => setMenu({ x: event.clientX, y: event.clientY, field: column.code, label: column.label })}
@@ -617,7 +712,7 @@ export function Specimen({
           onView={setView}
           groupingLabel={groupingLabel(draft.grouping, fieldLabel) || undefined}
           onGroup={() => setGroupOpen(true)}
-          onManageColumns={() => setColumnsOpen(true)}
+          onManageFields={() => setFieldsOpen(true)}
           controls={
             draft.view === 'gantt' ? (
               <GanttZoomSlider zoom={draft.zoom} onZoom={setZoom} />
@@ -633,6 +728,8 @@ export function Specimen({
             direction={direction}
             statusDisplay={statusDisplay}
             levels={draft.grouping}
+            sort={draft.sort}
+            onSortColumn={(code) => update((layout) => ({ sort: nextSort(layout.sort ?? draft.sort, code) }))}
             onColumnContextMenu={(event, column) => setMenu({ x: event.clientX, y: event.clientY, field: column.code, label: column.label })}
             {...columnProps}
           />
@@ -711,19 +808,40 @@ export function Specimen({
             x={menu.x}
             y={menu.y}
             columnLabel={menu.label}
-            statusDisplay={menu.field === 'status' ? statusDisplay : undefined}
-            onStatusDisplay={menu.field === 'status' ? setStatusDisplay : undefined}
+            statusDisplay={menu.field === 'status' ? (page === 'shots' && shotView ? statusFor(shotView) : statusDisplay) : undefined}
+            onStatusDisplay={
+              menu.field === 'status'
+                ? (value) => (page === 'shots' && shotView ? setViewDisplay(shotView, (own) => ({ ...own, statusDisplay: value })) : setStatusDisplay(value))
+                : undefined
+            }
+            onSort={
+              draft.view === 'gantt'
+                ? (direction) => update((layout) => ({ gantt: { ...layout.gantt, sort: [{ field: menu.field, direction }] } }))
+                : page === 'shots' && shotView
+                  ? (direction) => setViewDisplay(shotView, (own) => ({ ...own, sort: [{ field: menu.field, direction }] }))
+                  : page === 'tasks' && draft.view === 'table'
+                    ? (direction) => update(() => ({ sort: [{ field: menu.field, direction }] }))
+                    : undefined
+            }
+            onGroupBy={
+              page === 'shots' && shotView && shotView !== 'kanban'
+                ? () => setViewDisplay(shotView, (own) => ({ ...own, grouping: [{ field: menu.field, direction: 'asc' }] }))
+                : undefined
+            }
             onConditionalFormat={canFormat ? () => setFormatColumn(menu.field) : undefined}
             conditionalFormatBlocked={
               canFormat ? undefined : 'Your permissions don\'t allow formats on this shared page. Save into My Pages to format your own copy.'
             }
-            onManageColumns={() => setColumnsOpen(true)}
-            onConfigureField={() =>
-              setConfigure({
-                code: menu.field,
-                table: page === 'tasks' || draft.view === 'gantt' ? 'Task' : 'Shot',
-              })
-            }
+            onManageFields={() => {
+              setFieldsStart(menu.field);
+              setFieldsOpen(true);
+            }}
+            wrap={wrapColumn ? (draft.wrap.table ?? []).includes(menu.field) : undefined}
+            onWrap={wrapColumn ? () => toggleWrapIn('table', menu.field) : undefined}
+            onConfigureField={() => {
+              setFieldsStart(menu.field);
+              setFieldsOpen(true);
+            }}
             onClose={closeMenu}
           />
         </div>
@@ -793,13 +911,38 @@ export function Specimen({
           }}
         />
       )}
-      {columnsOpen && current && page !== 'dashboard' && (
-        <ManageColumnsDialog
+      {fieldsOpen && current && page !== 'dashboard' && (
+        <ManageFieldsDialog
           tableLabel={current.name}
           fields={page === 'shots' ? manageFields : taskFields}
           shown={draft.columns}
           canManage={canManageSchema}
           hasData={(code) => fieldHasValue(page === 'shots' ? shotsPage.allShots : tasksPage.projectTasks, code)}
+          usage={(code, value) => valueCount(page === 'shots' ? shotsPage.allShots : tasksPage.projectTasks, code, value)}
+          noun={page === 'shots' ? 'shot' : 'task'}
+          view={draft.view}
+          sections={page === 'shots' ? viewsFor('Shot', PROJECT_ID) : viewsFor('Task', PROJECT_ID).filter((item) => item === 'table' || item === 'gantt')}
+          viewFields={{
+            cardHeader: draft.cardHeader,
+            cardBody: draft.cardBody,
+            thumbInside: draft.thumbInside,
+            thumbBelow: draft.thumbBelow,
+            kanbanHeader: draft.kanbanHeader,
+            kanbanBody: draft.kanbanBody,
+            wrap: draft.wrap,
+            ganttShown: (() => {
+              // In the order the gantt shows them, including any column moved on the gantt itself.
+              const shown = draft.gantt.shown ?? DEFAULT_GANTT_COLUMNS;
+              const order = draft.gantt.order ?? [];
+              return [...shown].sort((a, b) => (order.includes(a) ? order.indexOf(a) : 999 + shown.indexOf(a)) - (order.includes(b) ? order.indexOf(b) : 999 + shown.indexOf(b)));
+            })(),
+            viewDisplay: draft.viewDisplay,
+            formats: draft.formats,
+            taskGrouping: draft.taskGrouping,
+          }}
+          displayDefaults={page === 'shots' ? { sort: shotsSort, grouping: draft.grouping, statusDisplay } : undefined}
+          initialField={fieldsStart}
+          taskFields={taskFields}
           onFormula={(code, formula) => {
             if (code.startsWith('cf-')) {
               setCustomFields((list) => list.map((item) => (item.code === code ? { ...item, formula } : item)));
@@ -807,7 +950,7 @@ export function Specimen({
             }
             setFieldPatches((prev) => ({ ...prev, [code]: { ...prev[code], formula } }));
           }}
-          onApply={(shown, fields) => {
+          onSave={(shown, fields, views) => {
             const dropped =
               page === 'shots'
                 ? [
@@ -815,14 +958,21 @@ export function Specimen({
                     ...customFields.filter((field) => !fields.some((item) => item.code === field.code)).map((field) => field.code),
                   ]
                 : [];
+            const keep = (list: string[] | undefined) => (list ?? []).filter((code) => !dropped.includes(code));
             update((layout) => ({
               columns: shown,
-              cardBody: (layout.cardBody ?? []).filter((code) => !dropped.includes(code)),
-              thumbInside: (layout.thumbInside ?? []).filter((code) => !dropped.includes(code)),
-              thumbBelow: (layout.thumbBelow ?? []).filter((code) => !dropped.includes(code)),
-              kanbanBody: (layout.kanbanBody ?? []).filter((code) => !dropped.includes(code)),
+              cardHeader: keep(views?.cardHeader ?? layout.cardHeader),
+              cardBody: keep(views?.cardBody ?? layout.cardBody),
+              thumbInside: keep(views?.thumbInside ?? layout.thumbInside),
+              thumbBelow: keep(views?.thumbBelow ?? layout.thumbBelow),
+              kanbanHeader: keep(views?.kanbanHeader ?? layout.kanbanHeader),
+              kanbanBody: keep(views?.kanbanBody ?? layout.kanbanBody),
+              wrap: views?.wrap ?? layout.wrap,
+              gantt: views ? { ...layout.gantt, shown: views.ganttShown, order: ['name', ...views.ganttShown.filter((code) => code !== 'name')] } : layout.gantt,
+              viewDisplay: views?.viewDisplay ?? layout.viewDisplay,
+              formats: views?.formats ?? layout.formats,
               grouping: (layout.grouping ?? []).filter((level) => !dropped.includes(level.field)),
-              taskGrouping: (layout.taskGrouping ?? []).filter((level) => !dropped.includes(level.field)),
+              taskGrouping: (views?.taskGrouping ?? layout.taskGrouping ?? []).filter((level) => !dropped.includes(level.field)),
               ...(layout.kanbanField && dropped.includes(layout.kanbanField) ? { kanbanField: 'status' } : {}),
             }));
             setFieldPatches((prev) => ({
@@ -830,66 +980,44 @@ export function Specimen({
               ...Object.fromEntries(
                 fields
                   .filter((field) => !field.code.startsWith('cf-') && field.code !== 'locked')
-                  .map((field) => [field.code, { unique: field.unique, formula: field.formula }]),
+                  .map((field) => [
+                    field.code,
+                    { unique: field.unique, formula: field.formula, display: field.display, validValues: field.validValues },
+                  ]),
               ),
             }));
+            if (page === 'shots') fields.forEach(moveHiddenStatuses);
             if (page === 'shots') {
-              setCustomFields(fields.filter((field) => field.code.startsWith('cf-')));
+              setCustomFields(fields.filter((field) => field.code.startsWith('cf-')).map(({ statusReplacements: _moved, ...field }) => field));
               setRemovedFieldCodes(dropped.filter((code) => shotsPage.fields.some((field) => field.code === code)));
             }
-            setColumnsOpen(false);
           }}
-          onClose={() => setColumnsOpen(false)}
+          onClose={() => {
+            setFieldsOpen(false);
+            setFieldsStart(undefined);
+          }}
         />
       )}
-      {configure &&
-        (() => {
-          const fields = configure.table === 'Shot' ? manageFields : taskFields;
-          const field = fields.find((item) => item.code === configure.code);
-          if (!field) return null;
-          const records = configure.table === 'Shot' ? shotsPage.allShots : tasksPage.projectTasks;
-          return (
-            <ConfigureFieldDialog
-              field={field}
-              fields={fields}
-              canManage={canManageSchema}
-              hasData={fieldHasValue(records, field.code)}
-              onSave={(next) => {
-                if (next.code.startsWith('cf-')) {
-                  setCustomFields((list) => list.map((item) => (item.code === next.code ? next : item)));
-                  return;
-                }
-                setFieldPatches((prev) => ({
-                  ...prev,
-                  [next.code]: { ...prev[next.code], unique: next.unique, formula: next.formula },
-                }));
-              }}
-              onDelete={
-                configure.table === 'Shot' && !field.system
-                  ? () => {
-                      dropField(field.code);
-                      setConfigure(null);
-                    }
-                  : undefined
-              }
-              onClose={() => setConfigure(null)}
-            />
-          );
-        })()}
       {groupOpen && current && page !== 'dashboard' && (
         <GroupDialog
           key={ganttIsTasks ? 'gantt' : 'records'}
-          levels={ganttIsTasks ? draft.taskGrouping : draft.grouping}
+          levels={ganttIsTasks ? draft.taskGrouping : currentGrouping}
           fields={ganttIsTasks ? taskGroupFields(current?.query.table === 'Asset' ? 'Asset' : 'Shot') : groupFields()}
+          sort={page === 'shots' && !ganttIsTasks ? sortFor(shotView ?? 'table') : undefined}
+          sortFields={page === 'shots' && !ganttIsTasks ? shotSortFields() : undefined}
           savedWithPage
           note={
             ganttIsTasks
               ? 'This gantt is the tasks of these records. Its grouping stays with the gantt and does not change how the table, cards, or thumbnails are grouped.'
               : page === 'shots'
-                ? 'This grouping is for these shots. It stays when you switch between table, cards, and thumbnails, and it does not change the gantt.'
+                ? `This grouping and sort are for the ${VIEW_NAME[shotView ?? 'table']} view. Each view keeps its own; give several views the same one from Manage fields. They do not change the gantt.`
                 : 'This grouping is for these tasks. It stays when you switch between table, cards, thumbnails, and gantt.'
           }
-          onApply={(levels) => update(() => (ganttIsTasks ? { taskGrouping: levels } : { grouping: levels }))}
+          onApply={(levels, sort) => {
+            if (ganttIsTasks) update(() => ({ taskGrouping: levels }));
+            else if (page === 'shots' && shotView) setViewDisplay(shotView, (own) => ({ ...own, grouping: levels, ...(sort ? { sort } : {}) }));
+            else update(() => ({ grouping: levels }));
+          }}
           onClose={() => setGroupOpen(false)}
         />
       )}
