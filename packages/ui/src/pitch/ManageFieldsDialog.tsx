@@ -178,6 +178,8 @@ export function ManageFieldsDialog({
   const [selected, setSelected] = useState<string | undefined>(view === 'gantt' ? undefined : initialField);
   const [ganttSelected, setGanttSelected] = useState<string | undefined>(view === 'gantt' ? initialField : undefined);
   const [creating, setCreating] = useState<FieldsSection | null>(null);
+  // Where each field showed before Configure views' field list hid it, to put it back when it is shown again.
+  const [stash, setStash] = useState<Record<string, Partial<Record<'table' | 'cardHeader' | 'cardBody' | 'thumbInside' | 'thumbBelow' | 'kanbanHeader' | 'kanbanBody', number>> & { cardThumb?: boolean; kanbanThumb?: boolean }>>({});
   const [name, setName] = useState('');
   const [type, setType] = useState<FieldType>('text');
   const [createUnique, setCreateUnique] = useState<'project' | 'table' | undefined>(undefined);
@@ -287,6 +289,7 @@ export function ManageFieldsDialog({
     restId: string;
     /** Always shown and not movable, listed first: the thumbnail on cards, kanban cards, and thumbnails. */
     pinned?: { field: EffectiveField; title: string };
+    lockedTitle?: string;
   } => {
     if (section === 'table') {
       return {
@@ -344,6 +347,74 @@ export function ManageFieldsDialog({
     };
   };
 
+  /**
+   * Configure views' field list for the records' views: a field is shown when any of those views shows it. Hiding it
+   * takes it out of every view, remembering where it was; showing it puts it back there, or, the first time, in every view.
+   */
+  const recordPlaces = (): ReturnType<typeof placesFor> => {
+    const table = placesFor('table');
+    const keys: PlaceKey[] = ['cardHeader', 'cardBody', 'thumbInside', 'thumbBelow', 'kanbanHeader', 'kanbanBody'];
+    const thumbnail = draftFields.find((item) => item.type === 'media');
+    const others = enabled.filter((v): v is 'card' | 'thumb' | 'kanban' => v === 'card' || v === 'thumb' || v === 'kanban');
+    const inOthers = (code: string) =>
+      others.some((v) => (code === thumbnail?.code ? v === 'thumb' || (v === 'card' ? views?.cardThumb : views?.kanbanThumb) : placesFor(v).isShown(code)));
+    const isShown = (code: string) => visible.includes(code) || inOthers(code);
+    const insert = (list: string[], at: number, code: string) => {
+      const next = list.filter((item) => item !== code);
+      next.splice(Math.min(at, next.length), 0, code);
+      return next;
+    };
+    return {
+      ...table,
+      places: [
+        {
+          id: 'table',
+          order: [...visible, ...draftFields.filter((item) => !visible.includes(item.code) && inOthers(item.code)).map((item) => item.code)],
+          setOrder: (codes) => setVisible(codes.filter((code) => visible.includes(code))),
+        },
+      ],
+      isShown,
+      hide: (code) => {
+        const at: (typeof stash)[string] = {};
+        if (visible.includes(code)) at.table = visible.indexOf(code);
+        for (const key of keys) if (views?.[key].includes(code)) at[key] = views[key].indexOf(code);
+        if (code === thumbnail?.code) Object.assign(at, { cardThumb: views?.cardThumb, kanbanThumb: views?.kanbanThumb });
+        setStash((current) => ({ ...current, [code]: at }));
+        setVisible((current) => current.filter((item) => item !== code));
+        setView((current) => ({
+          ...(Object.fromEntries(keys.map((key) => [key, current[key].filter((item) => item !== code)])) as Partial<ViewFields>),
+          ...(code === thumbnail?.code ? { cardThumb: false, kanbanThumb: false } : {}),
+        }));
+      },
+      show: (code) => {
+        const at = stash[code];
+        const placed = at && Object.keys(at).some((key) => (key === 'cardThumb' || key === 'kanbanThumb' ? at[key] : true));
+        if (at && placed) {
+          if (at.table !== undefined) setVisible((current) => insert(current, at.table!, code));
+          setView((current) => ({
+            ...(Object.fromEntries(keys.filter((key) => at[key] !== undefined).map((key) => [key, insert(current[key], at[key]!, code)])) as Partial<ViewFields>),
+            ...(code === thumbnail?.code ? { cardThumb: !!at.cardThumb, kanbanThumb: !!at.kanbanThumb } : {}),
+          }));
+          return;
+        }
+        setVisible((current) => [...current.filter((item) => item !== code), code]);
+        setView((current) =>
+          code === thumbnail?.code
+            ? { cardThumb: true, kanbanThumb: true }
+            : {
+                ...(Object.fromEntries(
+                  (['cardBody', 'thumbBelow', 'kanbanBody'] as const)
+                    .filter((key) => !current[key === 'cardBody' ? 'cardHeader' : key === 'thumbBelow' ? 'thumbInside' : 'kanbanHeader'].includes(code))
+                    .map((key) => [key, [...current[key].filter((item) => item !== code), code]]),
+                ) as Partial<ViewFields>),
+              },
+        );
+      },
+      locked: (code) => code === thumbnail?.code && enabled.includes('thumb'),
+      lockedTitle: 'Thumbnail is required in Thumbnail view, so it always shows.',
+    };
+  };
+
   /** The Display options for a field in a tab, or a note when this page has none yet. */
   const displayDisplay = (section: FieldsSection, item: EffectiveField, zoneId?: string) =>
     views && displayDefaults ? (
@@ -357,11 +428,12 @@ export function ManageFieldsDialog({
         onDraft={(change) => setViews((current) => (current ? { ...current, ...change(current) } : current))}
         defaults={displayDefaults}
         enabled={enabled}
+        shown={mode !== 'view' || section !== 'table' || recordPlaces().isShown(item.code)}
         showIn={
           section === 'gantt'
             ? undefined
             : {
-                views: (['table', 'card', 'thumb', 'kanban'] as FieldsSection[]).filter((v) => enabled.includes(v)),
+                views: ['table', 'card', 'thumb', 'kanban'],
                 shows: (v) => {
                   if (item.type === 'media' && v === 'card') return views.cardThumb;
                   if (item.type === 'media' && v === 'kanban') return views.kanbanThumb;
@@ -387,7 +459,7 @@ export function ManageFieldsDialog({
     );
 
   const panes = (section: FieldsSection) => {
-    const { places, candidates, isShown, show, hide, locked, restId, pinned } = placesFor(section);
+    const { places, candidates, isShown, show, hide, locked, restId, pinned, lockedTitle } = mode === 'view' && section === 'table' ? recordPlaces() : placesFor(section);
     const placed = places.map((place) => ({
       place,
       items: place.order.map((code) => candidates.find((item) => item.code === code)).filter((item): item is EffectiveField => !!item),
@@ -406,7 +478,7 @@ export function ManageFieldsDialog({
       setCreating(null);
       (section === 'gantt' ? setGanttSelected : setSelected)(key.slice(key.indexOf(':') + 1));
     };
-    const showToggle: Placement = { checked: isShown, toggle: (code) => (isShown(code) ? hide(code) : show(code)), locked, lockedTitle: 'The task name always shows on the gantt.' };
+    const showToggle: Placement = { checked: isShown, toggle: (code) => (isShown(code) ? hide(code) : show(code)), locked, lockedTitle: lockedTitle ?? 'The task name always shows on the gantt.' };
     const row = (placeId: string, item: EffectiveField, extra?: Partial<Parameters<typeof FieldRow>[0]>) => (
       <FieldRow
         key={item.code}
@@ -695,11 +767,11 @@ export function ManageFieldsDialog({
             ))}
           </div>
         )}
-        <div className="min-h-0 flex-1" role="tabpanel" aria-label={mode === 'view' ? `${scopes.find((item) => item.id === scope)?.label ?? ''}: ${section === 'fields' ? 'Fields displayed' : section === 'formats' ? 'Conditional formatting' : 'Group and sort'}` : 'Fields'}>
+        <div className="flex min-h-0 flex-1 flex-col" role="tabpanel" aria-label={mode === 'view' ? `${scopes.find((item) => item.id === scope)?.label ?? ''}: ${section === 'fields' ? 'Fields displayed' : section === 'formats' ? 'Conditional formatting' : 'Group and sort'}` : 'Fields'}>
           {mode === 'fields' || section === 'fields' ? (
             panes(mode === 'view' ? tab : 'table')
           ) : section === 'formats' && views ? (
-            <div className="h-[32rem] overflow-y-auto p-4">
+            <div className="h-[32rem] min-h-0 overflow-y-auto p-4">
               {scope === 'gantt' && (
                 <p className="mb-3 text-sm text-fg-muted">
                   The gantt colors its {noun} rows with these rules: the ones set to show in Gantt view. Rules on Task fields themselves are not built yet.
@@ -805,7 +877,7 @@ function GroupSortTab({
   );
   const ganttOn = enabled.includes('gantt') && !ganttUnavailable;
   return (
-    <div className="flex h-[32rem] flex-col gap-4 overflow-y-auto p-4">
+    <div className="flex h-[32rem] min-h-0 flex-col gap-4 overflow-y-auto p-4">
       {scope === 'gantt' ? null : shared.length > 0 ? (
       <section className="flex flex-col gap-3 rounded-md border border-line p-3" aria-label={`Group and sort: ${shared.map((item) => SECTION_LABEL[item].replace(' view', '')).join(', ')}`}>
         <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
