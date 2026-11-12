@@ -1,6 +1,10 @@
-import type { EffectiveField, Expr, FieldType } from '@sgp/mock-data';
+import type { ConditionalFormat, EffectiveField, Expr, FieldType, GroupLevel, TableView } from '@sgp/mock-data';
 import { useEffect, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useReorder } from './reorder';
+import { RulesBoard } from './FieldFormats';
+import { GroupSortPanel, type GroupField } from './GroupDialog';
+import { VIEW_ICON } from './shotsPage';
+import { withViewDisplay } from './viewDisplay';
 import { FieldDisplayOptions, type DisplayDefaults, type DisplayDraft } from './DisplayOptions';
 import { fieldSystemName, FormulaEditor } from './formulaEditor';
 import { isNumberField } from './numberDisplay';
@@ -30,6 +34,15 @@ export type DraftField = EffectiveField & { statusReplacements?: Record<string, 
 
 /** Where each card, thumbnail, and kanban field sits, which text fields wrap, and which Task columns the gantt shows. Saved with the page. */
 export interface ViewFields extends DisplayDraft {
+  /** Views the page offers; the rest are hidden from the view switcher. */
+  enabledViews: TableView[];
+  /** Project-wide conditional format rules for this table, in order. */
+  projectFormats: ConditionalFormat[];
+  /** The gantt's sort of its tasks. */
+  ganttSort: GroupLevel[];
+  /** Cards and kanban cards show the thumbnail in their header. */
+  cardThumb: boolean;
+  kanbanThumb: boolean;
   cardHeader: string[];
   cardBody: string[];
   thumbInside: string[];
@@ -81,6 +94,16 @@ export function ManageFieldsDialog({
   taskFields = [],
   displayDefaults,
   initialField,
+  mode = 'fields',
+  ganttUnavailable,
+  groupFields = [],
+  sortFields = [],
+  ganttGroupFields = [],
+  ganttSortFields = [],
+  canEditProject = false,
+  projectLabel = 'project-wide',
+  records = [],
+  initialSection = 'fields',
   onSave,
   onFormula,
   onClose,
@@ -110,6 +133,26 @@ export function ManageFieldsDialog({
   /** Opens with this field selected, as Configure field does. */
   initialField?: string;
   /**
+   * 'fields' (Manage fields): the table's fields and their configuration, which applies everywhere.
+   * 'view' (View > Configure): each view's fields, their order and places, and every display option.
+   */
+  mode?: 'fields' | 'view';
+  /** Why the gantt cannot be turned on for this table, if it cannot. */
+  ganttUnavailable?: string;
+  /** Fields the records can be grouped and sorted by, and the gantt's tasks. */
+  groupFields?: GroupField[];
+  sortFields?: GroupField[];
+  ganttGroupFields?: GroupField[];
+  ganttSortFields?: GroupField[];
+  /** Project-wide rules can be changed. */
+  canEditProject?: boolean;
+  /** For example "every Shots page in The Last Lamplighter". */
+  projectLabel?: string;
+  /** Records rules are counted against. */
+  records?: Array<Record<string, unknown>>;
+  /** The Configure tab to open on. */
+  initialSection?: 'fields' | 'formats' | 'group';
+  /**
    * Saves without closing, so several changes can be made and saved in turn.
    * Fields can carry `statusReplacements`: records on a hidden status move to the named one.
    */
@@ -121,7 +164,12 @@ export function ManageFieldsDialog({
   const [draftFields, setDraftFields] = useState<EffectiveField[]>(() => fields.map((field) => ({ ...field })));
   const [visible, setVisible] = useState<string[]>(shown);
   const [views, setViews] = useState<ViewFields | undefined>(viewFields);
-  const [tab, setTab] = useState<FieldsSection>(() => (sections.includes(view) ? view : sections[0] ?? 'table'));
+  const enabled = sections.filter((item) => !views || views.enabledViews.includes(item));
+  // Configure views opens on up to two tabs, the records' own views and the gantt of their tasks, each with the same sections.
+  const [scopeChoice, setScope] = useState<'records' | 'gantt'>(view === 'gantt' ? 'gantt' : 'records');
+  // The field list's width, once its divider is dragged; until then it is as wide as it needs.
+  const [paneWidth, setPaneWidth] = useState<number | null>(null);
+  const [section, setSection] = useState<'fields' | 'formats' | 'group'>(initialSection);
   // What was last saved; changes since then are unsaved.
   const [saved, setSaved] = useState(() => ({ fields: fields.map((field) => ({ ...field })), shown, views: viewFields }));
   // Each section remembers the field it shows on the right.
@@ -162,6 +210,17 @@ export function ManageFieldsDialog({
 
   const setView = (change: (current: ViewFields) => Partial<ViewFields>) => setViews((current) => (current ? { ...current, ...change(current) } : current));
 
+
+  const recordViews = enabled.filter((item) => item !== 'gantt');
+  const ganttOn = enabled.includes('gantt') && !ganttUnavailable;
+  const scope: 'records' | 'gantt' = scopeChoice === 'gantt' ? (ganttOn ? 'gantt' : 'records') : recordViews.length ? 'records' : 'gantt';
+  const tab: FieldsSection = scope === 'gantt' ? 'gantt' : 'table';
+  const Noun = noun.charAt(0).toUpperCase() + noun.slice(1);
+  const scopes = [
+    ...(recordViews.length ? [{ id: 'records' as const, label: `${Noun} view${recordViews.length > 1 ? 's' : ''}`, icon: noun === 'task' ? 'square-check' : noun === 'shot' ? 'film' : 'box' }] : []),
+    ...(ganttOn ? [{ id: 'gantt' as const, label: 'Task view (Gantt)', icon: 'square-check' }] : []),
+  ];
+
   const addField = () => {
     const label = name.trim();
     if (!label) return;
@@ -200,7 +259,6 @@ export function ManageFieldsDialog({
       kanbanBody: current.kanbanBody.filter((item) => item !== code),
     }));
   };
-
   const summary = (section: FieldsSection) => {
     if (section === 'table') return `${shownFields.length} shown`;
     if (!views) return '';
@@ -210,12 +268,26 @@ export function ManageFieldsDialog({
     return `${new Set(['name', ...views.ganttShown]).size} Task columns shown`;
   };
 
+
+
   type PlaceKey = 'cardHeader' | 'cardBody' | 'thumbInside' | 'thumbBelow' | 'kanbanHeader' | 'kanbanBody';
   /**
    * The places a view shows fields. A card, kanban card, or thumbnail shows a field in one place only: its header (or on
    * the image) or its body (or below the image). Showing a field puts it in the body; a link moves it between the two.
    */
-  const placesFor = (section: FieldsSection): { places: ListPlace[]; candidates: EffectiveField[]; isShown: (code: string) => boolean; show: (code: string) => void; hide: (code: string) => void; locked?: (code: string) => boolean; restId: string } => {
+  const placesFor = (
+    section: FieldsSection,
+  ): {
+    places: ListPlace[];
+    candidates: EffectiveField[];
+    isShown: (code: string) => boolean;
+    show: (code: string) => void;
+    hide: (code: string) => void;
+    locked?: (code: string) => boolean;
+    restId: string;
+    /** Always shown and not movable, listed first: the thumbnail on cards, kanban cards, and thumbnails. */
+    pinned?: { field: EffectiveField; title: string };
+  } => {
     if (section === 'table') {
       return {
         places: [{ id: 'table', order: visible, setOrder: setVisible }],
@@ -252,6 +324,7 @@ export function ManageFieldsDialog({
         : section === 'kanban'
           ? ['kanbanHeader', 'kanbanBody', 'Inside the kanban header', 'Inside the kanban body', 'Move to header', 'Move to body']
           : ['thumbInside', 'thumbBelow', 'Inside the thumbnail', 'Below the thumbnail', 'Move inside', 'Move below'];
+    const thumbnail = draftFields.find((item) => item.type === 'media');
     const headCodes = views?.[head] ?? [];
     const bodyCodes = (views?.[body] ?? []).filter((code) => !headCodes.includes(code));
     const moveTo = (from: PlaceKey, to: PlaceKey) => (code: string) =>
@@ -266,6 +339,8 @@ export function ManageFieldsDialog({
       show: (code) => setView((current) => ({ [body]: [...current[body].filter((item) => item !== code), code] })),
       hide: (code) => setView((current) => ({ [head]: current[head].filter((item) => item !== code), [body]: current[body].filter((item) => item !== code) })),
       restId: body,
+      // Only the thumbnail view needs the thumbnail: it is the image itself. Cards and kanban cards can hide theirs.
+      pinned: thumbnail && section === 'thumb' ? { field: thumbnail, title: 'Thumbnail is required.' } : undefined,
     };
   };
 
@@ -281,6 +356,28 @@ export function ManageFieldsDialog({
         draft={views}
         onDraft={(change) => setViews((current) => (current ? { ...current, ...change(current) } : current))}
         defaults={displayDefaults}
+        enabled={enabled}
+        showIn={
+          section === 'gantt'
+            ? undefined
+            : {
+                views: (['table', 'card', 'thumb', 'kanban'] as FieldsSection[]).filter((v) => enabled.includes(v)),
+                shows: (v) => {
+                  if (item.type === 'media' && v === 'card') return views.cardThumb;
+                  if (item.type === 'media' && v === 'kanban') return views.kanbanThumb;
+                  const places = placesFor(v as FieldsSection);
+                  return places.pinned?.field.code === item.code || places.isShown(item.code);
+                },
+                locked: (v) => (v === 'thumb' && item.type === 'media' ? placesFor('thumb').pinned?.title : undefined),
+                toggle: (v) => {
+                  if (item.type === 'media' && v === 'card') return setView((current) => ({ cardThumb: !current.cardThumb }));
+                  if (item.type === 'media' && v === 'kanban') return setView((current) => ({ kanbanThumb: !current.kanbanThumb }));
+                  const places = placesFor(v as FieldsSection);
+                  if (places.isShown(item.code)) places.hide(item.code);
+                  else places.show(item.code);
+                },
+              }
+        }
       />
     ) : (
       <section className="flex flex-col gap-2" aria-label="Display options">
@@ -290,7 +387,7 @@ export function ManageFieldsDialog({
     );
 
   const panes = (section: FieldsSection) => {
-    const { places, candidates, isShown, show, hide, locked, restId } = placesFor(section);
+    const { places, candidates, isShown, show, hide, locked, restId, pinned } = placesFor(section);
     const placed = places.map((place) => ({
       place,
       items: place.order.map((code) => candidates.find((item) => item.code === code)).filter((item): item is EffectiveField => !!item),
@@ -298,12 +395,13 @@ export function ManageFieldsDialog({
     const restAll = candidates.filter((item) => !isShown(item.code));
     const rest = section === 'table' || section === 'gantt' ? restAll : [...restAll].sort((a, b) => a.label.localeCompare(b.label));
     const firstShown = placed.find((entry) => entry.items.length > 0);
-    const placeOf = (code: string) => placed.find((entry) => entry.items.some((item) => item.code === code))?.place.id ?? restId;
+    const placeOf = (code: string) =>
+      pinned?.field.code === code ? 'pinned' : placed.find((entry) => entry.items.some((item) => item.code === code))?.place.id ?? restId;
     const firstCode = firstShown?.items[0]?.code ?? rest[0]?.code ?? '';
     const remembered = section === 'gantt' ? ganttSelected : selected;
-    const selectedCode = remembered && candidates.some((item) => item.code === remembered) ? remembered : firstCode;
+    const selectedCode = remembered && (candidates.some((item) => item.code === remembered) || pinned?.field.code === remembered) ? remembered : firstCode;
     const selectedKey = `${placeOf(selectedCode)}:${selectedCode}`;
-    const current = candidates.find((item) => item.code === selectedCode);
+    const current = [...candidates, ...(pinned ? [pinned.field] : [])].find((item) => item.code === selectedCode);
     const select = (key: string) => {
       setCreating(null);
       (section === 'gantt' ? setGanttSelected : setSelected)(key.slice(key.indexOf(':') + 1));
@@ -322,25 +420,76 @@ export function ManageFieldsDialog({
     const schemaField = section === 'gantt' ? undefined : draftFields.find((item) => item.code === current?.code);
     return (
       <div className="flex h-[32rem] min-h-0">
-        <div className="flex w-max min-w-56 max-w-[50%] shrink-0 flex-col border-r border-line">
+        <div className={`relative flex shrink-0 flex-col border-r border-line ${paneWidth ? '' : 'w-max min-w-56 max-w-[50%]'}`} style={paneWidth ? { width: paneWidth } : undefined}>
+          <span
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize the field list"
+            title="Drag to resize, double-click to fit"
+            className="group/divider absolute top-0 -right-1 z-10 flex h-full w-2 cursor-col-resize justify-center"
+            onDoubleClick={() => setPaneWidth(null)}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              const pane = event.currentTarget.parentElement!;
+              const row = pane.parentElement!;
+              const startX = event.clientX;
+              const startWidth = pane.getBoundingClientRect().width;
+              const max = row.getBoundingClientRect().width - 240;
+              const move = (e: PointerEvent) => setPaneWidth(Math.round(Math.min(max, Math.max(160, startWidth + e.clientX - startX))));
+              const up = () => {
+                window.removeEventListener('pointermove', move);
+                window.removeEventListener('pointerup', up);
+                document.body.style.cursor = '';
+              };
+              document.body.style.cursor = 'col-resize';
+              window.addEventListener('pointermove', move);
+              window.addEventListener('pointerup', up);
+            }}
+          >
+            <span className="h-full w-0.5 bg-transparent group-hover/divider:bg-accent" />
+          </span>
+          {mode === 'fields' ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-2" role="list" aria-label="Fields">
+              {[...shownFields, ...draftFields.filter((item) => !visible.includes(item.code)).sort((a, b) => a.label.localeCompare(b.label))].map((item) => (
+                <button
+                  key={item.code}
+                  role="listitem"
+                  className={`flex w-full items-center gap-1.5 rounded-sm px-2 text-left text-sm whitespace-nowrap ${selectedCode === item.code && creating !== section ? 'bg-accent-subtle' : 'hover:bg-row-hover'}`}
+                  style={height}
+                  onClick={() => select(`table:${item.code}`)}
+                >
+                  {item.type === 'calculated' && <Icon name="square-function" size={12} className="shrink-0 text-fg-subtle" />}
+                  {item.code === 'locked' && <Icon name="lock" size={12} className="shrink-0 text-fg-subtle" />}
+                  {item.label}
+                  <span className="ml-auto pl-3 font-mono text-xs text-fg-subtle">{fieldSystemName(item)}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             <p className="flex items-center gap-1.5 px-2 py-1 text-xs text-fg-subtle">
               <span className="w-5 shrink-0" />
               <span className="w-9 shrink-0 text-center">Show</span>
               <span>Field</span>
             </p>
+            {pinned &&
+              row('pinned', pinned.field, {
+                show: { checked: () => true, toggle: () => {}, locked: () => true, lockedTitle: pinned.title },
+              })}
             {placed.map(({ place, items }, index) => (
               <PlaceList
                 key={place.id}
                 place={place}
                 items={items}
-                first={index === 0}
+                first={index === 0 && !pinned}
                 renderRow={(item, drag) => row(place.id, item, { drag, move: place.move && !locked?.(item.code) ? { label: place.move.label, onClick: () => place.move!.run(item.code) } : undefined })}
               />
             ))}
             {rest.length > 0 && <p className="mt-3 border-t border-line px-2 pt-2 pb-1 text-xs font-semibold text-fg-muted">Not shown</p>}
             {rest.map((item) => row(restId, item))}
           </div>
+          )}
+          {mode === 'fields' && (
           <div className="border-t border-line p-2">
             <button
               className={`flex w-full items-center gap-1.5 rounded-md px-2 text-sm ${canManage && section !== 'gantt' ? 'text-accent hover:bg-row-hover' : 'cursor-default text-fg-subtle opacity-60'}`}
@@ -358,6 +507,7 @@ export function ManageFieldsDialog({
               <Icon name="plus" /> Create custom field
             </button>
           </div>
+          )}
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
@@ -396,7 +546,8 @@ export function ManageFieldsDialog({
           ) : schemaField ? (
             <>
               <FieldHeading field={schemaField} />
-              {displayDisplay(section, schemaField, selectedKey.slice(0, selectedKey.indexOf(':')))}
+              {mode === 'view' && displayDisplay(section, schemaField, selectedKey.slice(0, selectedKey.indexOf(':')))}
+              {mode === 'fields' && (
               <ConfigurationSection>
                 <FieldConfig
                   key={schemaField.code}
@@ -412,17 +563,15 @@ export function ManageFieldsDialog({
                   onDelete={canManage && !schemaField.system ? () => removeField(schemaField.code) : undefined}
                 />
               </ConfigurationSection>
+              )}
             </>
           ) : current && section === 'gantt' ? (
             <>
               <FieldHeading table="Task" field={current} />
               {displayDisplay(section, current)}
-              <ConfigurationSection>
-                <FieldConfig key={current.code} heading={false} table="Task" field={current} fields={taskFields} canManage={false} hasData={false} noun="task" onPatch={() => {}} />
-                <p className="text-sm text-fg-muted">
-                  The gantt shows tasks, so its columns are Task fields{current.code === 'name' ? '; the task name always shows' : ''}. Task fields change from the Tasks page.
-                </p>
-              </ConfigurationSection>
+              <p className="text-sm text-fg-muted">
+                The gantt shows tasks, so its columns are Task fields{current.code === 'name' ? '; the task name always shows' : ''}. Task fields are configured from the Tasks page.
+              </p>
             </>
           ) : (
             <p className="text-sm text-fg-subtle">Select a field.</p>
@@ -436,53 +585,153 @@ export function ManageFieldsDialog({
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-canvas/60 pt-12" onMouseDown={onClose}>
       <div
         role="dialog"
-        aria-label="Manage fields"
+        aria-label={mode === 'view' ? 'Configure views' : 'Manage fields'}
         className="flex max-h-[calc(100vh-6rem)] w-[56rem] max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-line-strong bg-surface-raised text-fg"
         style={{ boxShadow: 'var(--sgp-shadow-overlay)' }}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="flex items-start gap-3 border-b border-line px-4 py-3">
-          <Icon name="settings" size={18} className="mt-0.5 text-fg-subtle" />
+        <header className={`flex items-start gap-3 border-b border-line px-4 ${mode === 'view' ? 'pt-3 pb-5' : 'py-3'}`}>
+          <span className="mt-0.5 flex text-fg-subtle" title={mode === 'view' ? 'Configure views: how this page shows its records in each view' : 'Manage fields: the configuration of each field, everywhere it is used'}>
+            <Icon name={mode === 'view' ? 'sliders-horizontal' : 'settings'} size={18} />
+          </span>
           <div className="flex flex-col">
-            <h2 className="text-lg font-semibold">Manage fields</h2>
-            <p className="text-sm text-fg-muted">
-              {tableLabel}. Display options belong to each view and are saved with this page. Configuration applies everywhere and needs permission to manage the schema.
-            </p>
+            {mode === 'view' ? (
+              <>
+                <h2 className="text-lg font-semibold">Configure the views of &ldquo;{tableLabel}&rdquo;</h2>
+                {views && (
+                  <div className="mt-4.5 flex flex-wrap items-center gap-1 text-sm" role="group" aria-label="Enable views">
+                    <span className="mr-1 text-fg-muted">Enable / disable views:</span>
+                    {sections.map((item) => {
+                      const on = views.enabledViews.includes(item) && !(item === 'gantt' && ganttUnavailable);
+                      const unavailable = item === 'gantt' ? ganttUnavailable : undefined;
+                      const last = on && views.enabledViews.length === 1;
+                      const name = SECTION_LABEL[item];
+                      const title =
+                        unavailable ??
+                        (last
+                          ? `${name} is on, and it is the only view left; a page needs at least one.`
+                          : on
+                            ? `${name} is on: it shows in the view switcher. Click to turn it off.${item === view ? ' The page moves to the next view that is on.' : ''}`
+                            : `${name} is off: it is hidden from the view switcher. Click to turn it on.`);
+                      return (
+                        <span key={item} title={title} className={`flex ${item === 'gantt' ? 'ml-3' : ''}`}>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={on}
+                          aria-label={`Enable ${name}`}
+                          title={title}
+                          disabled={!!unavailable || last}
+                          // A disabled button takes no hover, so its tooltip shows from the wrapper.
+                          style={{ ...height, pointerEvents: unavailable || last ? 'none' : undefined }}
+                          onClick={() =>
+                            setView((current) => ({
+                              enabledViews: on ? current.enabledViews.filter((v) => v !== item) : sections.filter((v) => v === item || current.enabledViews.includes(v)),
+                            }))
+                          }
+                          className={`flex items-center gap-1.5 rounded-md border px-2 ${
+                            on ? 'border-accent bg-accent-subtle text-fg' : 'border-line-strong text-fg-subtle hover:bg-row-hover hover:text-fg'
+                          } ${unavailable ? 'opacity-50' : ''} disabled:cursor-default`}
+                        >
+                          <Icon name={VIEW_ICON[item]} size={14} className={on ? 'text-accent' : ''} />
+                          {name.replace(' view', '')}
+                        </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-semibold">Manage fields</h2>
+                <p className="text-sm text-fg-muted">{tableLabel}. Field configuration applies everywhere this field is used and needs permission to manage the schema.</p>
+              </>
+            )}
           </div>
-          <button className="ml-auto text-fg-subtle hover:text-fg" aria-label="Close" onClick={onClose}>
+          <button className="ml-auto text-fg-subtle hover:text-fg" aria-label="Close" title="Close without saving the unsaved changes" onClick={onClose}>
             <Icon name="x" />
           </button>
         </header>
 
-        <div role="tablist" aria-label="Views" className="flex gap-1 border-b border-line px-4">
-          {sections.map((section) => (
-            <button
-              key={section}
-              role="tab"
-              aria-selected={tab === section}
-              title={summary(section)}
-              onClick={() => setTab(section)}
-              className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 text-sm ${
-                tab === section ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'
-              }`}
-              style={{ height: 'calc(var(--sgp-row-compact) + 0.5rem)' }}
-            >
-              {SECTION_LABEL[section]}
-              {section === view && <span className="rounded-sm bg-accent-subtle px-1.5 text-xs text-fg">Current</span>}
-            </button>
-          ))}
-        </div>
-        <div className="min-h-0 flex-1" role="tabpanel" aria-label={SECTION_LABEL[tab]}>
-          {panes(tab)}
+        {mode === 'view' && scopes.length > 0 && (
+          <div role="tablist" aria-label="Views" className="flex gap-1 border-b border-line px-4 pt-2">
+            {scopes.map((item) => (
+              <button
+                key={item.id}
+                role="tab"
+                aria-selected={scope === item.id}
+                title={`${item.label}${scope === item.id ? ' (open)' : ''}: ${summary(item.id === 'gantt' ? 'gantt' : 'table')}`}
+                onClick={() => setScope(item.id)}
+                className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 text-sm ${scope === item.id ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg'}`}
+                style={{ height: 'calc(var(--sgp-row-compact) + 0.5rem)' }}
+              >
+                <Icon name={item.icon} size={14} className="text-fg-subtle" />
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === 'view' && (
+          <div role="tablist" aria-label="Configure" className="mt-2 flex gap-1 border-y border-line bg-surface-sunken/40 px-4 py-1">
+            {(
+              [
+                ['fields', 'Fields displayed', 'columns-3'],
+                ...(views && displayDefaults ? ([['formats', 'Conditional formatting', 'palette'], ['group', 'Group and sort', 'group']] as const) : []),
+              ] as const
+            ).map(([id, label, icon]) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={section === id}
+                title={`${label} for ${scopes.find((item) => item.id === scope)?.label ?? 'this page'}${section === id ? ' (open)' : ''}`}
+                onClick={() => setSection(id)}
+                className={`flex items-center gap-1.5 rounded-md px-2 text-sm ${section === id ? 'bg-accent-subtle font-medium text-fg' : 'text-fg-muted hover:bg-row-hover hover:text-fg'}`}
+                style={height}
+              >
+                <Icon name={icon} size={14} className="text-fg-subtle" />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="min-h-0 flex-1" role="tabpanel" aria-label={mode === 'view' ? `${scopes.find((item) => item.id === scope)?.label ?? ''}: ${section === 'fields' ? 'Fields displayed' : section === 'formats' ? 'Conditional formatting' : 'Group and sort'}` : 'Fields'}>
+          {mode === 'fields' || section === 'fields' ? (
+            panes(mode === 'view' ? tab : 'table')
+          ) : section === 'formats' && views ? (
+            <div className="h-[32rem] overflow-y-auto p-4">
+              {scope === 'gantt' && (
+                <p className="mb-3 text-sm text-fg-muted">
+                  The gantt colors its {noun} rows with these rules: the ones set to show in Gantt view. Rules on Task fields themselves are not built yet.
+                </p>
+              )}
+              <RulesBoard
+                key={scope}
+                pageRules={scope === 'gantt' ? views.formats.filter(inGantt) : views.formats}
+                projectRules={scope === 'gantt' ? views.projectFormats.filter(inGantt) : views.projectFormats}
+                canEditProject={canEditProject}
+                projectLabel={projectLabel}
+                fields={draftFields}
+                columns={draftFields.filter((item) => item.type !== 'media')}
+                records={records}
+                noun={`${noun}s`}
+                enabled={scope === 'gantt' ? ['gantt'] : recordViews}
+                onPageRules={(formats) => setView((current) => ({ formats: scope === 'gantt' ? mergeShown(current.formats, formats) : formats }))}
+                onProjectRules={(projectFormats) => setView((current) => ({ projectFormats: scope === 'gantt' ? mergeShown(current.projectFormats, projectFormats) : projectFormats }))}
+              />
+            </div>
+          ) : views && displayDefaults ? (
+            <GroupSortTab scope={scope} views={views} defaults={displayDefaults} enabled={enabled} groupFields={groupFields} sortFields={sortFields} ganttGroupFields={ganttGroupFields} ganttSortFields={ganttSortFields} ganttUnavailable={ganttUnavailable} onViews={setView} />
+          ) : null}
         </div>
 
         <footer className="flex items-center gap-2 border-t border-line px-4 py-3">
           <span className="mr-auto text-xs text-fg-subtle">
-            {dirty
-              ? canManage
-                ? 'Unsaved changes. Showing, placing, or wrapping a field changes this page; a new field, a formula, or a uniqueness rule changes the table for everyone who can manage the schema.'
-                : 'Unsaved changes. Showing, placing, or wrapping a field changes this page; keep it for everyone from the Page menu.'
-              : 'No unsaved changes.'}
+            {!dirty
+              ? 'No unsaved changes.'
+              : mode === 'view'
+                ? 'Unsaved changes. They change this page; keep them for everyone from the View menu.'
+                : 'Unsaved changes. A new field, a formula, a status list, or a uniqueness rule changes the table for everyone.'}
           </span>
           <button className="rounded-md border border-line-strong px-3 text-sm hover:bg-row-hover" style={height} onClick={onClose}>
             Close
@@ -497,6 +746,125 @@ export function ManageFieldsDialog({
           </button>
         </footer>
       </div>
+    </div>
+  );
+}
+
+/** A rule shows in the gantt unless it lists views without it. */
+const inGantt = (rule: ConditionalFormat) => !rule.views || rule.views.includes('gantt');
+
+/** Puts edits made to the rules that show in the gantt back among all the rules, in place; new ones go last. */
+function mergeShown(all: ConditionalFormat[], edited: ConditionalFormat[]) {
+  const kept = all.flatMap((rule) => {
+    if (!inGantt(rule)) return [rule];
+    const next = edited.find((item) => item.id === rule.id);
+    return next ? [next] : [];
+  });
+  const shownOrder = edited.filter((rule) => all.some((item) => item.id === rule.id));
+  let at = 0;
+  const ordered = kept.map((rule) => (inGantt(rule) && shownOrder.some((item) => item.id === rule.id) ? shownOrder[at++]! : rule));
+  return [...ordered, ...edited.filter((rule) => !all.some((item) => item.id === rule.id))];
+}
+
+/**
+ * Group and sort for the page: one section for the views of the records themselves (table, cards, thumbnails, which share
+ * it), and one for the gantt, which is a view of their tasks.
+ */
+function GroupSortTab({
+  scope,
+  views,
+  defaults,
+  enabled,
+  groupFields,
+  sortFields,
+  ganttGroupFields,
+  ganttSortFields,
+  ganttUnavailable,
+  onViews,
+}: {
+  scope: 'records' | 'gantt';
+  views: ViewFields;
+  defaults: DisplayDefaults;
+  enabled: FieldsSection[];
+  groupFields: GroupField[];
+  sortFields: GroupField[];
+  ganttGroupFields: GroupField[];
+  ganttSortFields: GroupField[];
+  ganttUnavailable?: string;
+  onViews: (change: (current: ViewFields) => Partial<ViewFields>) => void;
+}) {
+  // Only the views turned on under Enable share this grouping and sort.
+  const shared = (['table', 'card', 'thumb'] as const).filter((item) => enabled.includes(item));
+  const lead = shared[0];
+  const levels = (lead && views.viewDisplay[lead]?.grouping) ?? defaults.grouping;
+  const sort = (lead && views.viewDisplay[lead]?.sort) ?? defaults.sort;
+  const differs = shared.filter(
+    (item) =>
+      JSON.stringify(views.viewDisplay[item]?.grouping ?? defaults.grouping) !== JSON.stringify(levels) ||
+      JSON.stringify(views.viewDisplay[item]?.sort ?? defaults.sort) !== JSON.stringify(sort),
+  );
+  const ganttOn = enabled.includes('gantt') && !ganttUnavailable;
+  return (
+    <div className="flex h-[32rem] flex-col gap-4 overflow-y-auto p-4">
+      {scope === 'gantt' ? null : shared.length > 0 ? (
+      <section className="flex flex-col gap-3 rounded-md border border-line p-3" aria-label={`Group and sort: ${shared.map((item) => SECTION_LABEL[item].replace(' view', '')).join(', ')}`}>
+        <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+          Group and sort
+          {shared.map((item) => (
+            <span key={item} className="flex items-center gap-1 text-xs font-normal text-fg-muted" title={`This grouping and sort apply in ${SECTION_LABEL[item]}`}>
+              <Icon name={VIEW_ICON[item]} size={13} className="text-fg-subtle" />
+              {SECTION_LABEL[item].replace(' view', '')}
+            </span>
+          ))}
+        </h3>
+        {differs.length > 0 && (
+          <p className="text-xs text-fg-subtle">
+            {differs.map((item) => SECTION_LABEL[item]).join(' and ')} {differs.length === 1 ? 'has' : 'have'} a grouping or sort of {differs.length === 1 ? 'its' : 'their'} own. A change here gives {shared.length === 2 ? 'both' : 'all three'} this one.
+          </p>
+        )}
+        <GroupSortPanel
+          levels={levels}
+          fields={groupFields}
+          sort={sort}
+          sortFields={sortFields}
+          onChange={(nextLevels, nextSort) =>
+            onViews((current) => {
+              let viewDisplay = current.viewDisplay;
+              for (const item of shared) viewDisplay = withViewDisplay(viewDisplay, item, (own) => ({ ...own, grouping: nextLevels, sort: nextSort }));
+              return { viewDisplay };
+            })
+          }
+        />
+        {enabled.includes('kanban') && <p className="text-xs text-fg-subtle">Kanban stacks its cards in columns instead; its sort is set from the board.</p>}
+      </section>
+      ) : (
+        <p className="rounded-md border border-dashed border-line-strong p-3 text-sm text-fg-subtle">Table, Card, and Thumbnail are turned off, so there is nothing to group or sort here. Turn one on under Enable.</p>
+      )}
+      {scope === 'gantt' && (
+      <section className="flex flex-col gap-3 rounded-md border border-line p-3" aria-label="Group and sort: Gantt">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          Group and sort
+          <span className="flex items-center gap-1 text-xs font-normal text-fg-muted" title="This grouping and sort apply to the gantt's tasks">
+            <Icon name={VIEW_ICON.gantt} size={13} className="text-fg-subtle" />
+            Gantt
+          </span>
+        </h3>
+        {ganttOn ? (
+          <>
+            <p className="text-xs text-fg-subtle">The gantt shows the tasks of these records, so it groups and sorts tasks.</p>
+            <GroupSortPanel
+              levels={views.taskGrouping}
+              fields={ganttGroupFields}
+              sort={views.ganttSort}
+              sortFields={ganttSortFields}
+              onChange={(taskGrouping, ganttSort) => onViews(() => ({ taskGrouping, ganttSort: ganttSort ?? [] }))}
+            />
+          </>
+        ) : (
+          <p className="text-sm text-fg-subtle">{ganttUnavailable ?? 'The gantt view is turned off. Turn it on under Enable.'}</p>
+        )}
+      </section>
+      )}
     </div>
   );
 }
@@ -600,12 +968,20 @@ function FieldRow({
           checked={show.locked?.(field.code) || checked}
           disabled={show.locked?.(field.code)}
           onChange={() => show.toggle(field.code)}
-          className="accent-[var(--sgp-color-accent)] disabled:opacity-50"
+          className="accent-[var(--sgp-color-accent)] disabled:pointer-events-none disabled:opacity-50"
         />
       </span>
       <button className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch pr-2 text-left text-sm whitespace-nowrap" onClick={onSelect}>
-        {field.type === 'calculated' && <Icon name="square-function" size={12} className="shrink-0 text-fg-subtle" />}
-        {field.code === 'locked' && <Icon name="lock" size={12} className="shrink-0 text-fg-subtle" />}
+        {field.type === 'calculated' && (
+          <span title="Calculated field: its value comes from a formula" className="flex shrink-0">
+            <Icon name="square-function" size={12} className="text-fg-subtle" />
+          </span>
+        )}
+        {field.code === 'locked' && (
+          <span title="Locked field: whether the record can be edited" className="flex shrink-0">
+            <Icon name="lock" size={12} className="text-fg-subtle" />
+          </span>
+        )}
         <span>{field.label}</span>
       </button>
       {move && (

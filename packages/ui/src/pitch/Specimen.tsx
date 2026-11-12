@@ -234,6 +234,15 @@ export function Specimen({
   const [removedFieldCodes, setRemovedFieldCodes] = useState<string[]>([]);
   const [fieldPatches, setFieldPatches] = useState<Record<string, Partial<EffectiveField>>>({});
   const [fieldsStart, setFieldsStart] = useState<string | undefined>(undefined);
+  // The same dialog, two ways in: Manage fields (configuration) and View > Configure (display options).
+  const [fieldsMode, setFieldsMode] = useState<'fields' | 'view'>('fields');
+  const [fieldsSection, setFieldsSection] = useState<'fields' | 'formats' | 'group'>('fields');
+  const openFields = (mode: 'fields' | 'view', field?: string, section: 'fields' | 'formats' | 'group' = 'fields') => {
+    setFieldsMode(mode);
+    setFieldsStart(field);
+    setFieldsSection(section);
+    setFieldsOpen(true);
+  };
   const [locks, setLocks] = useState<Record<string, 'locked' | 'system'>>({ sh010_10: 'locked', sh030_30: 'system' });
   const copiedShots = useCopiedShots();
   const [shotMenu, setShotMenu] = useState<
@@ -433,6 +442,8 @@ export function Specimen({
     return { ...ordered, fields, fieldByCode: (code: string) => fields.find((field) => field.code === code) };
   };
   const currentGrouping = page === 'shots' && shotView ? groupingFor(shotView) : draft.grouping;
+  /** The views the page offers in its switcher: those enabled in View > Configure, or every one the table has. */
+  const enabledOf = (all: TableView[]) => (draft.enabledViews ? all.filter((item) => draft.enabledViews!.includes(item)) : all);
   const projectScope = { level: 'project' as const, projectId: PROJECT_ID };
   const projectFolders = folders.filter((f) => sameScope(f.scope, projectScope));
   const folderLabel = (p: TablePage) =>
@@ -492,6 +503,7 @@ export function Specimen({
       onSave={() => setSaved((all) => ({ ...all, [pageId]: draft }))}
       onSaveAs={(name, folderId) => saveCopy(name, { shared: true, folderId: folderId || undefined })}
       onSaveToMyPages={(name) => saveCopy(name, { shared: false, folderId: undefined })}
+      onConfigure={() => openFields('view')}
     />
   );
 
@@ -577,13 +589,13 @@ export function Specimen({
           }
           searchLabel="Search shots"
           addLabel="Shot"
-          views={viewsFor('Shot', PROJECT_ID)}
+          views={enabledOf(viewsFor('Shot', PROJECT_ID))}
           view={draft.view}
           onView={setView}
           controls={controls}
           groupingLabel={groupingLabel(ganttIsTasks ? draft.taskGrouping : currentGrouping, fieldLabel) || undefined}
           onGroup={() => setGroupOpen(true)}
-          onManageFields={() => setFieldsOpen(true)}
+          onManageFields={() => openFields('fields')}
         />
         {draft.view === 'table' && (
           <ShotGridSpecimen
@@ -614,6 +626,7 @@ export function Specimen({
             columns={draft.cardColumns}
             onOpenShot={openShot}
             shotsPage={viewPage('card')}
+            showThumb={draft.cardThumb ?? true}
             recordActions={recordActions}
             formats={formatsIn('card')}
             bodyFields={draft.cardBody}
@@ -652,6 +665,7 @@ export function Specimen({
             visibleColumns={draft.kanbanColumns}
             onOpenShot={openShot}
             shotsPage={viewPage('kanban')}
+            showThumb={draft.kanbanThumb ?? true}
             recordActions={recordActions}
             formats={formatsIn('kanban')}
             bodyFields={draft.kanbanBody}
@@ -707,12 +721,12 @@ export function Specimen({
           }
           searchLabel="Search tasks"
           addLabel="Task"
-          views={viewsFor('Task', PROJECT_ID)}
+          views={enabledOf(viewsFor('Task', PROJECT_ID))}
           view={draft.view}
           onView={setView}
           groupingLabel={groupingLabel(draft.grouping, fieldLabel) || undefined}
           onGroup={() => setGroupOpen(true)}
-          onManageFields={() => setFieldsOpen(true)}
+          onManageFields={() => openFields('fields')}
           controls={
             draft.view === 'gantt' ? (
               <GanttZoomSlider zoom={draft.zoom} onZoom={setZoom} />
@@ -828,20 +842,14 @@ export function Specimen({
                 ? () => setViewDisplay(shotView, (own) => ({ ...own, grouping: [{ field: menu.field, direction: 'asc' }] }))
                 : undefined
             }
-            onConditionalFormat={canFormat ? () => setFormatColumn(menu.field) : undefined}
+            onConditionalFormat={canFormat ? () => openFields('view', menu.field, 'formats') : undefined}
             conditionalFormatBlocked={
               canFormat ? undefined : 'Your permissions don\'t allow formats on this shared page. Save into My Pages to format your own copy.'
             }
-            onManageFields={() => {
-              setFieldsStart(menu.field);
-              setFieldsOpen(true);
-            }}
+            onManageFields={() => openFields('fields', menu.field)}
             wrap={wrapColumn ? (draft.wrap.table ?? []).includes(menu.field) : undefined}
             onWrap={wrapColumn ? () => toggleWrapIn('table', menu.field) : undefined}
-            onConfigureField={() => {
-              setFieldsStart(menu.field);
-              setFieldsOpen(true);
-            }}
+            onConfigureField={() => openFields('fields', menu.field)}
             onClose={closeMenu}
           />
         </div>
@@ -930,6 +938,11 @@ export function Specimen({
             kanbanHeader: draft.kanbanHeader,
             kanbanBody: draft.kanbanBody,
             wrap: draft.wrap,
+            enabledViews: draft.enabledViews ?? (page === 'shots' ? viewsFor('Shot', PROJECT_ID) : viewsFor('Task', PROJECT_ID)),
+            projectFormats,
+            ganttSort: draft.gantt.sort ?? [],
+            cardThumb: draft.cardThumb ?? true,
+            kanbanThumb: draft.kanbanThumb ?? true,
             ganttShown: (() => {
               // In the order the gantt shows them, including any column moved on the gantt itself.
               const shown = draft.gantt.shown ?? DEFAULT_GANTT_COLUMNS;
@@ -942,6 +955,16 @@ export function Specimen({
           }}
           displayDefaults={page === 'shots' ? { sort: shotsSort, grouping: draft.grouping, statusDisplay } : undefined}
           initialField={fieldsStart}
+          mode={fieldsMode}
+          initialSection={fieldsSection}
+          ganttUnavailable={tableConfig?.traits.hasTasks || page === 'tasks' ? undefined : 'This table has no tasks, so it has no gantt.'}
+          groupFields={groupFields()}
+          sortFields={page === 'shots' ? shotSortFields() : []}
+          ganttGroupFields={taskGroupFields('Shot')}
+          ganttSortFields={taskFields.map((field) => ({ code: field.code, label: field.label }))}
+          canEditProject={permissionsFor(viewerId).managesSchema}
+          projectLabel="every Shots page in The Last Lamplighter"
+          records={(page === 'shots' ? shotsPage.allShots : tasksPage.projectTasks) as unknown as Array<Record<string, unknown>>}
           taskFields={taskFields}
           onFormula={(code, formula) => {
             if (code.startsWith('cf-')) {
@@ -968,7 +991,14 @@ export function Specimen({
               kanbanHeader: keep(views?.kanbanHeader ?? layout.kanbanHeader),
               kanbanBody: keep(views?.kanbanBody ?? layout.kanbanBody),
               wrap: views?.wrap ?? layout.wrap,
-              gantt: views ? { ...layout.gantt, shown: views.ganttShown, order: ['name', ...views.ganttShown.filter((code) => code !== 'name')] } : layout.gantt,
+              gantt: views
+                ? { ...layout.gantt, shown: views.ganttShown, order: ['name', ...views.ganttShown.filter((code) => code !== 'name')], sort: views.ganttSort }
+                : layout.gantt,
+              enabledViews: views ? views.enabledViews : layout.enabledViews,
+              cardThumb: views ? views.cardThumb : layout.cardThumb,
+              kanbanThumb: views ? views.kanbanThumb : layout.kanbanThumb,
+              // A view turned off moves the page to the first view still on.
+              view: views && !views.enabledViews.includes(layout.view) ? views.enabledViews[0] ?? layout.view : layout.view,
               viewDisplay: views?.viewDisplay ?? layout.viewDisplay,
               formats: views?.formats ?? layout.formats,
               grouping: (layout.grouping ?? []).filter((level) => !dropped.includes(level.field)),
@@ -986,6 +1016,7 @@ export function Specimen({
                   ]),
               ),
             }));
+            if (page === 'shots' && views) setProjectFormats(views.projectFormats);
             if (page === 'shots') fields.forEach(moveHiddenStatuses);
             if (page === 'shots') {
               setCustomFields(fields.filter((field) => field.code.startsWith('cf-')).map(({ statusReplacements: _moved, ...field }) => field));

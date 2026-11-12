@@ -1,0 +1,8 @@
+---
+description: Every icon explains itself on hover
+alwaysApply: true
+---
+
+# Icon tooltips
+
+Every icon in the UI has a mouseover tooltip that says what it is for and its current state, for example "Card view is on: it shows in the view switcher. Click to turn it off." This includes icons inside buttons, toggles, checkboxes, list rows, and tabs. A disabled or greyed control always says why.

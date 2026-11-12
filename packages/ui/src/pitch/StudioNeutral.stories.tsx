@@ -332,8 +332,8 @@ export const ColumnsAndPageMenu: StoryObj = {
     await pause(600);
     await userEvent.dblClick(canvas.getAllByRole('separator', { name: 'Resize Description' })[0]);
     await pause(400);
-    await expect(canvas.getAllByRole('button', { name: 'Page has unsaved changes' })).toHaveLength(1);
-    await userEvent.click(canvas.getByRole('button', { name: 'Page has unsaved changes' }));
+    await expect(canvas.getAllByRole('button', { name: 'View has unsaved changes' })).toHaveLength(1);
+    await userEvent.click(canvas.getByRole('button', { name: 'View has unsaved changes' }));
     await expect(canvas.getByRole('menuitem', { name: /Save as new page/ })).toBeVisible();
   },
 };
@@ -344,7 +344,7 @@ export const ManageFields: StoryObj = {
   render: () => (
     <StoryFrame
       title="Manage fields: one section per view"
-      intro="The gear beside Search shots opens Manage fields in every view, on the tab for the view you are in. Click a field for its Display options (this view: wrap text, conditional formatting, sort, group, and number, date, or status display) and its Configuration (everywhere: uniqueness, formula, statuses, permissions). Each display option has view checkboxes to give other views the same setting; a view with its own different setting is greyed, '[name] view already configured'. Save keeps the dialog open; Close leaves."
+      intro="Experiment: Manage fields (the gear beside Search shots) holds only field configuration: uniqueness, formulas, statuses, permissions, and new fields. Every display option moved to the View menu (top right, was Page) under Configure: tabs per view, each view's fields and their order, and per field wrap text, conditional formatting, sort, group, and number, date, or status display."
     >
       <Specimen direction={studioNeutral} theme="dark" showComponents={false} height={760} initialFieldsOpen />
     </StoryFrame>

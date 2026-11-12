@@ -110,6 +110,7 @@ function LevelList({
             <button
               className="flex size-7 items-center justify-center rounded-sm text-fg-subtle hover:bg-row-hover hover:text-danger"
               aria-label={`Remove ${labelOf(level.field)}`}
+              title={`Remove ${labelOf(level.field)} from this list`}
               onClick={() => set(rowsRef.current.filter((row) => row.key !== level.key))}
             >
               <Icon name="x" size={14} />
@@ -133,6 +134,67 @@ function LevelList({
       >
         <Icon name="plus" /> {addLabel}
       </button>
+    </div>
+  );
+}
+
+/**
+ * The Group and sort editor without its dialog: grouping levels (up to ten) and, when sort fields are given, the sort
+ * inside each group. Every change is reported at once.
+ */
+export function GroupSortPanel({
+  levels,
+  fields,
+  sort,
+  sortFields,
+  onChange,
+}: {
+  levels: GroupLevel[];
+  fields: GroupField[];
+  sort?: GroupLevel[];
+  sortFields?: GroupField[];
+  onChange: (levels: GroupLevel[], sort?: GroupLevel[]) => void;
+}) {
+  const [draft, setDraft] = useState<DraftLevel[]>(() => levels.map(keyed));
+  const [sortDraft, setSortDraft] = useState<DraftLevel[]>(() => (sort ?? []).map(keyed));
+  const sorting = sort !== undefined && sortFields !== undefined;
+  return (
+    <div className="flex flex-col gap-3">
+      <section className="flex flex-col gap-2" aria-label="Grouping">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Group</h4>
+        <LevelList
+          name="group"
+          rows={draft}
+          onRows={(rows) => {
+            setDraft(rows);
+            onChange(plain(rows), sorting ? plain(sortDraft) : undefined);
+          }}
+          fields={fields}
+          firstLabel="Group by"
+          nextLabel="Then by"
+          max={MAX_LEVELS}
+          addLabel="Add level"
+          empty="Not grouped. Add a level to stack the records."
+        />
+      </section>
+      {sorting && (
+        <section className="flex flex-col gap-2 border-t border-line pt-3" aria-label="Sorting">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Sort</h4>
+          <LevelList
+            name="sort"
+            rows={sortDraft}
+            onRows={(rows) => {
+              setSortDraft(rows);
+              onChange(plain(draft), plain(rows));
+            }}
+            fields={sortFields!}
+            firstLabel="Sort by"
+            nextLabel="Then by"
+            addLabel="Add sort"
+            empty="Not sorted. Records keep the order they were created in."
+          />
+        </section>
+      )}
     </div>
   );
 }

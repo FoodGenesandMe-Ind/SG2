@@ -531,6 +531,8 @@ export interface CardSettings {
   expandedFields: string[];
   /** Cards per row, 1-10. */
   columns?: number;
+  /** The thumbnail at the left of the card header. Absent: shown. */
+  showThumbnail?: boolean;
 }
 
 export interface ThumbSettings {
@@ -645,10 +647,12 @@ export interface TablePage extends PageBase {
    * below a thumbnail): the whole value shows over several lines instead of being cut off. Saved with the page like its sort.
    */
   wrapFields?: Partial<Record<'table' | 'cardHeader' | 'cardBody' | 'kanbanHeader' | 'kanbanBody' | 'thumbInside' | 'thumbBelow', string[]>>;
+  /** Views the page offers in its view switcher. Absent: every view the table supports. */
+  enabledViews?: TableView[];
   /** Display settings a view keeps for itself (status display, number and date formats, sort, grouping). */
   viewDisplay?: Partial<Record<'table' | 'card' | 'thumb' | 'kanban', ViewDisplay>>;
   /** Kanban, when this project has enabled it for the page's table. */
-  kanban?: { field?: string; columns?: number; fields?: string[]; headerFields?: string[]; order?: string[] };
+  kanban?: { field?: string; columns?: number; fields?: string[]; headerFields?: string[]; order?: string[]; showThumbnail?: boolean };
 }
 
 export interface DashboardPage extends PageBase {

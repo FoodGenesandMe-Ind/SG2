@@ -98,8 +98,9 @@ function SavePageDialog({
 }
 
 /**
- * The Page icon at the top right of a page. It turns dirty as soon as the user changes the layout
- * (columns, widths, view, sizes); the menu offers only the actions the viewer's permissions allow.
+ * The View menu at the top right of a page. It turns dirty as soon as the user changes the layout
+ * (columns, widths, view, sizes, display options); Configure opens every display option, and the save actions follow
+ * the viewer's permissions.
  */
 export function PageMenu({
   pageName,
@@ -114,6 +115,7 @@ export function PageMenu({
   onSave,
   onSaveAs,
   onSaveToMyPages,
+  onConfigure,
 }: {
   pageName: string;
   shared: boolean;
@@ -127,6 +129,8 @@ export function PageMenu({
   onSave: () => void;
   onSaveAs: (name: string, folderId: string) => void;
   onSaveToMyPages: (name: string) => void;
+  /** Opens every display option of this page's views. */
+  onConfigure?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [dialog, setDialog] = useState<SaveAs | null>(null);
@@ -176,7 +180,7 @@ export function PageMenu({
         </span>
       )}
       <button
-        aria-label={dirty ? 'Page has unsaved changes' : 'Page saved'}
+        aria-label={dirty ? 'View has unsaved changes' : 'View saved'}
         aria-haspopup="menu"
         aria-expanded={open}
         title={dirty ? 'Unsaved changes. Click for options.' : 'No unsaved changes'}
@@ -187,14 +191,14 @@ export function PageMenu({
         style={height}
       >
         <Icon name={dirty ? 'file-pen-line' : 'file-check'} className={dirty ? 'text-warning' : ''} />
-        Page
+        View
         {dirty && <span className="size-1.5 rounded-full bg-warning" aria-hidden />}
       </button>
 
       {open && (
         <div
           role="menu"
-          aria-label="Page options"
+          aria-label="View options"
           className="absolute top-full right-0 z-40 mt-1 flex w-72 flex-col rounded-md border border-line-strong bg-surface-raised p-1 text-fg"
           style={{ boxShadow: 'var(--sgp-shadow-overlay)' }}
         >
@@ -218,6 +222,22 @@ export function PageMenu({
             )}
           </div>
           <div className="border-t border-line pt-1" />
+          {onConfigure && (
+            <button
+              role="menuitem"
+              className={item}
+              onClick={() => {
+                setOpen(false);
+                onConfigure();
+              }}
+            >
+              <Icon name="sliders-horizontal" className="mt-0.5 shrink-0 text-fg-subtle" />
+              <span className="flex flex-col">
+                Configure
+                <span className="text-xs text-fg-subtle">Every display option, for each view</span>
+              </span>
+            </button>
+          )}
           <button role="menuitem" className={item} disabled={!dirty} onClick={() => act(onRevert, 'Reverted')}>
             <Icon name="undo-2" className="mt-0.5 shrink-0 text-fg-subtle" />
             <span className="flex flex-col">

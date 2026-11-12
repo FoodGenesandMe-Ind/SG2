@@ -98,6 +98,7 @@ export function ShotCardsView({
   onCommand,
   wrap = {},
   onToggleWrap,
+  showThumb = true,
 }: {
   direction: Direction;
   statusDisplay: StatusDisplay;
@@ -123,6 +124,8 @@ export function ShotCardsView({
   /** Text and multi-link fields that wrap in each place this view shows them, and the toggle from the right-click menu. */
   wrap?: WrapByPlace;
   onToggleWrap?: (place: WrapPlace, code: string) => void;
+  /** These cards show the thumbnail in their header. */
+  showThumb?: boolean;
 }) {
   const { groups, page, fieldByCode } = shotsPage;
   const choices = fieldChoices(shotsPage);
@@ -210,6 +213,7 @@ export function ShotCardsView({
                     cellProps={edit.cellProps}
                     lockOf={lockOf}
                     headerWrap={wrap.cardHeader} bodyWrap={wrap.cardBody}
+                    showThumb={showThumb}
                     notice={edit.lockedNotice(shot.id)}
                     onDoubleClick={(event) => edit.onRecordDoubleClick(shot.id, event)}
                     onToggle={(event) => toggleCard(shot.id, event, cardIds)}
@@ -338,6 +342,7 @@ function ShotCard({
   lockOf,
   headerWrap = [],
   bodyWrap = [],
+  showThumb = true,
   dragging = false,
   notice,
   onToggle,
@@ -364,6 +369,8 @@ function ShotCard({
   /** Fields that wrap in the header, and in the body; each place has its own list. */
   headerWrap?: string[];
   bodyWrap?: string[];
+  /** The thumbnail at the left of the header; the page can turn it off for cards and kanban cards. */
+  showThumb?: boolean;
   /** Being moved to another kanban column. */
   dragging?: boolean;
   /** Drawn over the whole card, such as the locked notice. */
@@ -404,7 +411,15 @@ function ShotCard({
         >
           <Icon name={open ? 'chevron-down' : 'chevron-right'} size={12} />
         </button>
-        <span className="hidden h-9 w-16 shrink-0 rounded-sm @[15rem]:block" style={{ background: placeholderThumb(shot.code) }} />
+        {showThumb && (
+          <span
+            className="hidden h-9 w-16 shrink-0 rounded-sm @[15rem]:block"
+            style={{ background: placeholderThumb(shot.code) }}
+            role="img"
+            aria-label={`${shot.code} thumbnail`}
+            title={`${shot.code} thumbnail`}
+          />
+        )}
         <span className="flex w-4 shrink-0 justify-center">
           <RowTypeIcon icon="film" selected={selected} label={`Shot ${shot.code}`} />
         </span>
@@ -651,6 +666,7 @@ export function ShotKanbanView({
   onCommand,
   wrap = {},
   onToggleWrap,
+  showThumb = true,
 }: {
   direction: Direction;
   statusDisplay: StatusDisplay;
@@ -676,6 +692,8 @@ export function ShotKanbanView({
   /** Text and multi-link fields that wrap in each place this view shows them, and the toggle from the right-click menu. */
   wrap?: WrapByPlace;
   onToggleWrap?: (place: WrapPlace, code: string) => void;
+  /** These cards show the thumbnail in their header. */
+  showThumb?: boolean;
 }) {
   const { page, fieldByCode } = shotsPage;
   const choices = fieldChoices(shotsPage);
@@ -808,6 +826,7 @@ export function ShotKanbanView({
                     cellProps={edit.cellProps}
                     lockOf={lockOf}
                     headerWrap={wrap.kanbanHeader} bodyWrap={wrap.kanbanBody}
+                    showThumb={showThumb}
                     notice={edit.lockedNotice(shot.id)}
                     onDoubleClick={(event) => edit.onRecordDoubleClick(shot.id, event)}
                     onToggle={(event) => toggleCard(shot.id, event, cardIds)}

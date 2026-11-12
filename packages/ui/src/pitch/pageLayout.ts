@@ -43,6 +43,11 @@ export interface PageLayout {
   wrap: WrapByPlace;
   /** Display settings each view keeps for itself; a view without its own follows the page. */
   viewDisplay: ViewDisplays;
+  /** Views the page offers; absent means every view the table supports. */
+  enabledViews?: TableView[];
+  /** Cards and kanban cards show the thumbnail in their header; only the thumbnail view always shows it. */
+  cardThumb?: boolean;
+  kanbanThumb?: boolean;
 }
 
 const DEFAULT_HEADER = ['code', 'status'];
@@ -123,6 +128,9 @@ export function layoutFromPage(page: TablePage, overrides: Partial<PageLayout> =
     kanbanOrder: page.kanban?.order ?? [],
     wrap: page.wrapFields ?? {},
     viewDisplay: page.viewDisplay ?? {},
+    enabledViews: page.enabledViews,
+    cardThumb: page.cardSettings?.showThumbnail ?? true,
+    kanbanThumb: page.kanban?.showThumbnail ?? true,
     ...overrides,
   };
 }
@@ -147,6 +155,7 @@ export function pageWithLayout(page: TablePage, layout: PageLayout, changes: Par
       columns: layout.cardColumns,
       expandedFields: layout.cardBody,
       titleFields: layout.cardHeader ?? page.cardSettings.titleFields,
+      showThumbnail: layout.cardThumb ?? true,
     },
     thumbSettings: page.thumbSettings && {
       ...page.thumbSettings,
@@ -166,7 +175,15 @@ export function pageWithLayout(page: TablePage, layout: PageLayout, changes: Par
     },
     wrapFields: layout.wrap ?? {},
     viewDisplay: layout.viewDisplay ?? {},
-    kanban: { field: layout.kanbanField, columns: layout.kanbanColumns, fields: layout.kanbanBody, headerFields: layout.kanbanHeader, order: layout.kanbanOrder },
+    enabledViews: layout.enabledViews,
+    kanban: {
+      field: layout.kanbanField,
+      columns: layout.kanbanColumns,
+      fields: layout.kanbanBody,
+      headerFields: layout.kanbanHeader,
+      order: layout.kanbanOrder,
+      showThumbnail: layout.kanbanThumb ?? true,
+    },
     ...changes,
   };
 }
@@ -195,6 +212,9 @@ export function layoutChanges(saved: PageLayout, draft: PageLayout, labelOf: (co
   if ((saved.gantt.shown ?? []).join() !== (draft.gantt.shown ?? []).join()) changes.push('Gantt task columns');
   if (JSON.stringify(saved.gantt.sort ?? []) !== JSON.stringify(draft.gantt.sort ?? [])) changes.push('Gantt sort');
   if (!sameWrap(saved.wrap, draft.wrap)) changes.push('Wrap text');
+  if ((saved.enabledViews ?? []).join() !== (draft.enabledViews ?? []).join()) changes.push('Views enabled');
+  if ((saved.cardThumb ?? true) !== (draft.cardThumb ?? true)) changes.push('Card thumbnail');
+  if ((saved.kanbanThumb ?? true) !== (draft.kanbanThumb ?? true)) changes.push('Kanban card thumbnail');
   for (const view of SHOT_VIEWS) {
     if (JSON.stringify(saved.viewDisplay?.[view] ?? {}) !== JSON.stringify(draft.viewDisplay?.[view] ?? {})) changes.push(`${VIEW_NAME[view]} view display`);
   }

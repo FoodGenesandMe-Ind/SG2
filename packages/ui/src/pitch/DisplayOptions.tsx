@@ -2,8 +2,6 @@ import type { ConditionalFormat, DateFormat, EffectiveField, GroupLevel, NumberD
 import { useState, type ReactNode } from 'react';
 import { kindOf } from './conditionalFormat';
 import { DATE_FORMATS } from './dates';
-import { isGroupable } from './grouping';
-import { FieldFormats, rulesFormatting } from './FieldFormats';
 import { fieldSystemName } from './formulaEditor';
 import { Icon } from './Icon';
 import { VIEW_ICON } from './shotsPage';
@@ -76,6 +74,8 @@ export function FieldDisplayOptions({
   draft,
   onDraft,
   defaults,
+  enabled,
+  showIn,
 }: {
   field: EffectiveField;
   fields: EffectiveField[];
@@ -85,11 +85,22 @@ export function FieldDisplayOptions({
   draft: DisplayDraft;
   onDraft: (change: (current: DisplayDraft) => DisplayDraft) => void;
   defaults: DisplayDefaults;
+  /** Views turned on for the page. Absent: every view. */
+  enabled?: TableView[];
+  /** Which of the records' views show the field, and the switch for each; the first row of the options. */
+  showIn?: {
+    views: TableView[];
+    shows: (view: TableView) => boolean;
+    /** Why a view always shows the field, when it cannot be hidden there. */
+    locked: (view: TableView) => string | undefined;
+    toggle: (view: TableView) => void;
+  };
 }) {
+  const on = (view: TableView) => !enabled || enabled.includes(view);
   // Per option: views ticked by hand after a replace, and views unticked by hand so they stop following this one.
   const [picked, setPicked] = useState<Record<string, { in: TableView[]; out: TableView[] }>>({});
   // A view with its own, different setting is replaced only after the user says so.
-  const [replacing, setReplacing] = useState<{ id: string; view: TableView } | null>(null);
+  const [replacing, setReplacing] = useState<{ id: string; view: TableView; text?: string; run?: () => void } | null>(null);
   const code = field.code;
   const name = <span className="font-mono text-fg">{fieldSystemName(field)}</span>;
   const displayOf = (view: TableView) => (isShotView(view) ? draft.viewDisplay[view] : undefined);
@@ -98,7 +109,8 @@ export function FieldDisplayOptions({
     onDraft((current) => ({ ...current, viewDisplay: withViewDisplay(current.viewDisplay, view, change) }));
   };
 
-  const row = <T,>(id: string, label: string, heading: ReactNode, option: ViewOption<T>, render: (apply: (value: T | undefined) => void) => ReactNode) => {
+  const row = <T,>(id: string, label: string, heading: ReactNode, all: ViewOption<T>, render: (apply: (value: T | undefined) => void) => ReactNode) => {
+    const option = { ...all, views: all.views.filter(on) };
     const choice = picked[id] ?? { in: [], out: [] };
     const setChoice = (next: { in: TableView[]; out: TableView[] }) => setPicked((all) => ({ ...all, [id]: next }));
     // A view uses the same setting as this one, or a different one (a conflict).
@@ -168,31 +180,37 @@ export function FieldDisplayOptions({
   };
 
   const options: ReactNode[] = [];
+  if (showIn && tab !== 'gantt') {
+    options.push(
+      <OptionBlock
+        key="show"
+        label="Display field"
+        heading={<>Display {name} in the following views:</>}
+        checks={showIn.views.map((view) => {
+          const locked = showIn.locked(view);
+          const shown = showIn.shows(view);
+          return {
+            view,
+            checked: shown,
+            disabled: !!locked,
+            faded: false,
+            title:
+              locked ??
+              (shown ? `${field.label} shows in ${VIEW_NAME[view]} view. Click to hide it there.` : `${field.label} is hidden in ${VIEW_NAME[view]} view. Click to show it there.`),
+            onChange: () => showIn.toggle(view),
+          };
+        })}
+      />,
+    );
+  }
   const shotViews: TableView[] = ['table', 'card', 'thumb', 'kanban'];
 
   if (tab === 'gantt') {
-    options.push(
-      row<GroupLevel[]>(
-        'group',
-        'Group by this field',
-        <>Group by {name} in the following views:</>,
-        {
-          views: ['gantt'],
-          get: () => (draft.taskGrouping.length ? draft.taskGrouping : undefined),
-          effective: () => draft.taskGrouping,
-          set: (_view, value) => onDraft((current) => ({ ...current, taskGrouping: value ?? [] })),
-        },
-        (apply) => {
-          const pressed = draft.taskGrouping[0]?.field === code;
-          return (
-            <button type="button" aria-pressed={pressed} className={`self-start ${choice(pressed)}`} style={height} onClick={() => apply(pressed ? undefined : [{ field: code, direction: 'asc' }])}>
-              <Icon name="group" /> Group the gantt by {field.label}
-            </button>
-          );
-        },
-      ),
+    return (
+      <DisplaySection>
+        <p className="text-sm text-fg-subtle">Task columns on the gantt have no display options. Group and sort the gantt from the Group and sort tab.</p>
+      </DisplaySection>
     );
-    return <DisplaySection>{options}</DisplaySection>;
   }
 
   if (canWrap(field)) {
@@ -210,114 +228,18 @@ export function FieldDisplayOptions({
         key="wrap"
         label="Wrap text"
         heading={<>Wrap text in {name} in the following views:</>}
-        checks={(['table', 'card', 'thumb', 'kanban', 'gantt'] as const).map((view) => {
-          const unavailable = view === 'gantt' ? 'The gantt shows Task fields, so Shot fields do not wrap there.' : undefined;
-          return { view, checked: !unavailable && wraps(view), disabled: !!unavailable, faded: !!unavailable, title: unavailable, onChange: () => setWrap(view, !wraps(view)) };
-        })}
+        checks={(['table', 'card', 'thumb', 'kanban'] as const).filter(on).map((view) => ({
+          view,
+          checked: wraps(view),
+          disabled: false,
+          faded: false,
+          title: wraps(view)
+            ? `${field.label} wraps in ${VIEW_NAME[view]} view. Click to keep it on one line.`
+            : `${field.label} stays on one line in ${VIEW_NAME[view]} view. Click to wrap it.`,
+          onChange: () => setWrap(view, !wraps(view)),
+        }))}
         note="A wrapped value shows whole, over as many lines as it needs."
       />,
-    );
-  }
-
-  const rules = rulesFormatting(draft.formats, code);
-  const allViews: TableView[] = ['table', 'card', 'thumb', 'kanban', 'gantt'];
-  options.push(
-    <OptionBlock
-      key="formats"
-      label="Conditional formatting"
-      heading={<>Apply conditional formatting to {name} in the following views:</>}
-      checks={allViews.map((view) => {
-        const shows = rules.length > 0 && rules.every((rule) => (rule.views ?? allViews).includes(view));
-        return {
-          view,
-          checked: shows,
-          disabled: rules.length === 0,
-          faded: rules.length === 0,
-          title: rules.length === 0 ? 'Add a rule first, with + Conditional formatting below.' : undefined,
-          onChange: () =>
-            onDraft((current) => ({
-              ...current,
-              formats: current.formats.map((rule) => {
-                if (!rules.some((item) => item.id === rule.id)) return rule;
-                const list = rule.views ?? allViews;
-                const next = shows ? list.filter((item) => item !== view) : [...new Set([...list, view])];
-                return { ...rule, views: next.length === allViews.length ? undefined : next };
-              }),
-            })),
-        };
-      })}
-    >
-      <FieldFormats field={field} fields={fields} rules={draft.formats} onRules={(formats) => onDraft((current) => ({ ...current, formats }))} />
-    </OptionBlock>,
-  );
-
-  if (field.type !== 'media') {
-    const effectiveSort = (view: TableView) => displayOf(view)?.sort ?? defaults.sort;
-    options.push(
-      row<GroupLevel[]>(
-        'sort',
-        'Sort',
-        <>Sort by {name} in the following views:</>,
-        {
-          views: shotViews,
-          get: (view) => displayOf(view)?.sort,
-          effective: (view) => displayOf(view)?.sort ?? defaults.sort,
-          set: (view, value) => setDisplay(view, (current) => ({ ...current, sort: value })),
-        },
-        (apply) => (
-          <div className="flex gap-1">
-            {(['asc', 'desc'] as const).map((direction) => {
-              const pressed = effectiveSort(tab)[0]?.field === code && effectiveSort(tab)[0]?.direction === direction;
-              return (
-                <button
-                  key={direction}
-                  type="button"
-                  aria-pressed={pressed}
-                  className={choice(pressed)}
-                  style={height}
-                  onClick={() => apply(pressed ? undefined : [{ field: code, direction }])}
-                >
-                  <Icon name={direction === 'asc' ? 'arrow-down-a-z' : 'arrow-up-z-a'} /> Sort {direction === 'asc' ? 'ascending' : 'descending'}
-                </button>
-              );
-            })}
-          </div>
-        ),
-      ),
-    );
-  }
-
-  if (isGroupable(field.type) && field.type !== 'media') {
-    const effectiveGrouping = (view: TableView) => displayOf(view)?.grouping ?? defaults.grouping;
-    options.push(
-      row<GroupLevel[]>(
-        'group',
-        'Group by this field',
-        <>Group by {name} in the following views:</>,
-        {
-          views: shotViews,
-          get: (view) => displayOf(view)?.grouping,
-          effective: (view) => displayOf(view)?.grouping ?? defaults.grouping,
-          set: (view, value) => setDisplay(view, (current) => ({ ...current, grouping: value })),
-          notFor: (view) => (view === 'kanban' ? 'Kanban view groups by its columns. Choose the column field above the board.' : undefined),
-        },
-        (apply) => {
-          const pressed = effectiveGrouping(tab)[0]?.field === code;
-          return (
-            <button
-              type="button"
-              aria-pressed={pressed}
-              disabled={tab === 'kanban'}
-              title={tab === 'kanban' ? 'Kanban view groups by its columns. Choose the column field above the board.' : undefined}
-              className={`self-start ${choice(pressed)} disabled:opacity-40`}
-              style={height}
-              onClick={() => apply(pressed ? [] : [{ field: code, direction: 'asc' }])}
-            >
-              <Icon name="group" /> Group by this field
-            </button>
-          );
-        },
-      ),
     );
   }
 
@@ -397,7 +319,11 @@ export function FieldDisplayOptions({
     );
   }
 
-  return <DisplaySection>{options}</DisplaySection>;
+  return (
+    <DisplaySection>
+      {options.length > 0 ? options : <p className="text-sm text-fg-subtle">No display options for this kind of field. Conditional formatting, and group and sort, have tabs of their own.</p>}
+    </DisplaySection>
+  );
 }
 
 interface ViewCheck {
@@ -430,16 +356,20 @@ function OptionBlock({
   return (
     <div className="flex flex-col gap-1.5 rounded-md border border-line p-2.5" role="group" aria-label={label}>
       <span className="text-sm text-fg-muted">{heading}</span>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
         {checks.map((check) => (
-          <label key={check.view} className={`flex items-center gap-1.5 ${check.faded ? 'opacity-50' : ''}`} title={check.title}>
+          <label
+            key={check.view}
+            className={`-mx-1 flex cursor-pointer items-center gap-1.5 rounded-sm px-1.5 py-1 hover:bg-row-hover ${check.faded ? 'opacity-50' : ''}`}
+            title={check.title ?? `${label} is ${check.checked ? 'on' : 'off'} in ${VIEW_NAME[check.view]} view. Click to turn it ${check.checked ? 'off' : 'on'}.`}
+          >
             <input
               type="checkbox"
               aria-label={`${label} in ${VIEW_NAME[check.view]} view`}
               checked={check.checked}
               disabled={check.disabled}
               onChange={check.onChange}
-              className="accent-[var(--sgp-color-accent)]"
+              className="accent-[var(--sgp-color-accent)] disabled:pointer-events-none"
             />
             <Icon name={VIEW_ICON[check.view]} size={14} className="text-fg-subtle" />
             {VIEW_NAME[check.view]}

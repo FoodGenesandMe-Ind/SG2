@@ -17,21 +17,33 @@ export function ViewSwitcher({
   view: TableView;
   onView: (view: TableView) => void;
 }) {
+  const button = (v: TableView) => (
+    <button
+      key={v}
+      role="radio"
+      aria-checked={view === v}
+      aria-label={VIEW_LABEL[v]}
+      title={v === 'gantt' ? `${VIEW_LABEL[v]}: the tasks of these records` : VIEW_LABEL[v]}
+      onClick={() => onView(v)}
+      className={`flex items-center rounded-sm px-1.5 ${view === v ? 'bg-accent-subtle text-fg' : 'text-fg-muted hover:text-fg'}`}
+    >
+      <Icon name={VIEW_ICON[v]} />
+    </button>
+  );
+  const records = views.filter((v) => v !== 'gantt');
+  // The gantt is a view of these records' tasks, so it sits apart from the views of the records themselves.
   return (
-    <div role="radiogroup" aria-label="View" className="flex rounded-md border border-line-strong p-0.5 text-sm" style={rowHeight}>
-      {views.map((v) => (
-        <button
-          key={v}
-          role="radio"
-          aria-checked={view === v}
-          aria-label={VIEW_LABEL[v]}
-          title={VIEW_LABEL[v]}
-          onClick={() => onView(v)}
-          className={`flex items-center rounded-sm px-1.5 ${view === v ? 'bg-accent-subtle text-fg' : 'text-fg-muted hover:text-fg'}`}
-        >
-          <Icon name={VIEW_ICON[v]} />
-        </button>
-      ))}
+    <div role="radiogroup" aria-label="View" className="flex items-center gap-1.5 text-sm">
+      {records.length > 0 && (
+        <span className="flex rounded-md border border-line-strong p-0.5" style={rowHeight}>
+          {records.map(button)}
+        </span>
+      )}
+      {views.includes('gantt') && (
+        <span className="flex rounded-md border border-line-strong p-0.5" style={rowHeight}>
+          {button('gantt')}
+        </span>
+      )}
     </div>
   );
 }
